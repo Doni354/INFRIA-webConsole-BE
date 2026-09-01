@@ -60,7 +60,7 @@ export default function AiPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-primary mb-1">AI Configuration</h1>
-          <p className="text-text-secondary text-sm">Design your assistant's personality, boundaries, and generation behavior.</p>
+          <p className="text-text-secondary text-sm">Design your assistant&apos;s personality, boundaries, and generation behavior.</p>
         </div>
         <Button variant="primary" icon={saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />} onClick={handleSave} disabled={saving}>
           {saving ? "Saving..." : saved ? "Saved!" : "Save Configuration"}

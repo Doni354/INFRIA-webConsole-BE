@@ -41,7 +41,7 @@ export default function AppSettingsPage() {
     // Load registered apps
     try {
       const saved = localStorage.getItem(`infria_apps_${projectId}`);
-      if (saved) setRegisteredApps(JSON.parse(saved));
+      if (saved) setTimeout(() => setRegisteredApps(JSON.parse(saved)), 0);
     } catch(e) {}
   }, [projectId]);
 
@@ -306,7 +306,7 @@ const app = initializeApp({
               </button>
             </div>
             <Button variant="primary" className="w-full py-2.5" onClick={() => setNewlyGeneratedKey(null)}>
-              I've copied it securely
+              I&apos;ve copied it securely
             </Button>
           </div>
         </div>
