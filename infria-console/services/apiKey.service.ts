@@ -31,20 +31,42 @@ export const apiKeyService = {
   },
 
   async generate(projectId: string, name: string): Promise<{ key: APIKey; rawKey: string }> {
-    const rawKey = generateApiKey();
-    const keyData = {
+    const token = await auth.currentUser?.getIdToken();
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api-keys/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ projectId, name, environment: "production" })
+    });
+    
+    if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error?.message || "Failed to generate API Key");
+    }
+    const data = await res.json();
+    
+    const mockKey = {
+      id: data.id,
       projectId,
       name,
-      prefix: rawKey.slice(0, 18) + "••••",
+      prefix: data.key.slice(0, 18) + "••••",
       status: "active" as const,
       createdAt: now(),
       lastUsed: null,
     };
-    const ref = await addDoc(keysCol(projectId), keyData);
-    return { key: { id: ref.id, ...keyData }, rawKey };
+    return { key: mockKey, rawKey: data.key };
   },
 
   async revoke(projectId: string, keyId: string): Promise<void> {
-    await updateDoc(keyDoc(projectId, keyId), { status: "revoked" });
+    const token = await auth.currentUser?.getIdToken();
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api-keys/revoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ projectId, keyId })
+    });
+    
+    if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error?.message || "Failed to revoke API Key");
+    }
   },
 };

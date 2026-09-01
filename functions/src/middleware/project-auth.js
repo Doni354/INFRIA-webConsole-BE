@@ -1,5 +1,8 @@
 const { db } = require('../config/firebase');
+const crypto = require('crypto');
 const logger = require('../config/logger');
+
+const hashKey = (key) => crypto.createHash('sha256').update(key).digest('hex');
 
 const verifyRuntimeApiKey = async (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
@@ -11,8 +14,10 @@ const verifyRuntimeApiKey = async (req, res, next) => {
   }
 
   try {
+    const hashedKey = hashKey(apiKey);
+    
     const keysSnapshot = await db.collectionGroup('api_keys')
-      .where('key', '==', apiKey)
+      .where('key', '==', hashedKey)
       .where('status', '==', 'active')
       .limit(1)
       .get();

@@ -1,4 +1,5 @@
 const { db } = require('../../config/firebase');
+const { FieldValue } = require('firebase-admin/firestore');
 const { chunkText } = require('../../ai/rag/chunker');
 const { generateEmbedding } = require('../../ai/rag/embedding.service');
 const logger = require('../../config/logger');
@@ -12,6 +13,13 @@ const publishKnowledge = async (tenant, knowledgeId, rawText) => {
   await docRef.update({ status: 'processing', updatedAt: Date.now() });
   
   try {
+    // 1. Fetch AI Config to get BYOK OpenAI Key if the user submitted it via Web Console
+    let aiConfig = null;
+    const aiSnap = await db.doc(`users/${tenant.uid}/projects/${tenant.projectId}/ai_config/config`).get();
+    if (aiSnap.exists) {
+      aiConfig = aiSnap.data();
+    }
+
     const chunks = chunkText(rawText);
     const chunksColRef = db.collection(`users/${tenant.uid}/projects/${tenant.projectId}/knowledge_chunks`);
     
@@ -26,16 +34,14 @@ const publishKnowledge = async (tenant, knowledgeId, rawText) => {
     
     for (let i = 0; i < chunks.length; i++) {
       const chunkContext = chunks[i];
-      // Generate vector
-      // In a real flow, aiConfig.providerApiKey comes from project config DB. 
-      // For MVP, passing null means it will use process.env.OPENAI_API_KEY
-      const embeddingVector = await generateEmbedding(chunkContext, null);
+      // Generate vector using BYOK (aiConfig) or fallback to process.env.OPENAI_API_KEY
+      const embeddingVector = await generateEmbedding(chunkContext, aiConfig);
       
       const newRef = chunksColRef.doc();
       newBatch.set(newRef, {
         knowledgeId,
         text: chunkContext,
-        embedding: embeddingVector, // FieldValue.vector not strictly required on set if using raw array, firestore SDK converts it. But safest if needed. We'll rely on array for write.
+        embedding: FieldValue.vector(embeddingVector),
         index: i,
         createdAt: Date.now()
       });
@@ -43,9 +49,13 @@ const publishKnowledge = async (tenant, knowledgeId, rawText) => {
     
     await newBatch.commit();
     
-    // Mark as ready
-    await docRef.update({ status: 'ready', indexedAt: Date.now() });
-    logger.info({ knowledgeId }, 'Knowledge published and embedded successfully');
+    // Mark as ready and save metrics
+    await docRef.update({ 
+      status: 'ready', 
+      indexedAt: Date.now(),
+      chunkCount: chunks.length 
+    });
+    logger.info({ knowledgeId, chunks: chunks.length }, 'Knowledge published and embedded successfully');
     
   } catch (error) {
     logger.error({ err: error, knowledgeId }, 'Knowledge processing failed');

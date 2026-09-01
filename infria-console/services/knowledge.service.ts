@@ -54,20 +54,29 @@ export const knowledgeService = {
 
   async publish(projectId: string, id: string): Promise<void> {
     const uid = getUid();
+    
+    // Quick local optimistic update to layout shift 
     await updateDoc(knowledgeDoc(uid, projectId, id), {
       status: "processing",
       updatedAt: now(),
     });
-    // In production, a Cloud Function triggered by Firestore would handle vectorization.
-    // For prototype, simulate with client-side timeout:
-    setTimeout(async () => {
-      const chunks = Math.floor(Math.random() * 15) + 3;
-      await updateDoc(knowledgeDoc(uid, projectId, id), {
-        status: "ready",
-        chunkCount: chunks,
-        updatedAt: now(),
-      });
-    }, 5000);
+
+    const snap = await getDoc(knowledgeDoc(uid, projectId, id));
+    if (!snap.exists()) throw new Error(`Knowledge not found: ${id}`);
+    
+    const text = snap.data().content;
+    const token = await auth.currentUser?.getIdToken();
+    
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/knowledge/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ projectId, knowledgeId: id, text })
+    });
+    
+    if (!res.ok) {
+      const errData = await res.json().catch(() => null);
+      throw new Error(errData?.error?.message || "Failed to trigger publish");
+    }
   },
 
   async update(projectId: string, id: string, updates: Partial<Knowledge>): Promise<void> {
@@ -77,15 +86,25 @@ export const knowledgeService = {
 
   async reindex(projectId: string, id: string): Promise<void> {
     const uid = getUid();
+    
     await updateDoc(knowledgeDoc(uid, projectId, id), { status: "processing", updatedAt: now() });
-    setTimeout(async () => {
-      const chunks = Math.floor(Math.random() * 15) + 3;
-      await updateDoc(knowledgeDoc(uid, projectId, id), {
-        status: "ready",
-        chunkCount: chunks,
-        updatedAt: now(),
-      });
-    }, 4000);
+    
+    const snap = await getDoc(knowledgeDoc(uid, projectId, id));
+    if (!snap.exists()) throw new Error("Item not found");
+    
+    const text = snap.data().content;
+    const token = await auth.currentUser?.getIdToken();
+    
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/knowledge/reindex`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ projectId, knowledgeId: id, text })
+    });
+    
+    if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error?.message || "Failed to trigger reindex");
+    }
   },
 
   async archive(projectId: string, id: string): Promise<void> {

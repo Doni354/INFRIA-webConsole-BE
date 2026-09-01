@@ -221,7 +221,6 @@ const app = initializeApp({
                        <th className="px-6 py-3 font-medium cursor-pointer hover:bg-bg-hover transition-colors" onClick={() => toggleSort("name")}>
                          <div className="flex items-center gap-1">Key Name <ArrowUpDown className="w-3.5 h-3.5 text-text-muted opacity-50" /></div>
                        </th>
-                       <th className="px-6 py-3 font-medium">Key Prefix</th>
                        <th className="px-6 py-3 font-medium">Status</th>
                        <th className="px-6 py-3 font-medium cursor-pointer hover:bg-bg-hover transition-colors" onClick={() => toggleSort("createdAt")}>
                          <div className="flex items-center gap-1">Created <ArrowUpDown className="w-3.5 h-3.5 text-text-muted opacity-50" /></div>
@@ -238,11 +237,6 @@ const app = initializeApp({
                        paginatedData.map(key => (
                          <tr key={key.id} className="hover:bg-bg-hover transition-colors">
                            <td className="px-6 py-4 font-semibold text-text-primary whitespace-normal break-words min-w-[200px] lg:max-w-md">{key.name}</td>
-                           <td className="px-6 py-4 font-mono text-xs max-w-[200px] truncate">
-                              <span className="flex items-center gap-2 bg-bg-elevated px-2 py-1 rounded inline-flex border border-border-strong">
-                                {key.prefix}
-                              </span>
-                           </td>
                            <td className="px-6 py-4">
                              <Badge variant={key.status === "active" ? "success" : "error"}>{key.status}</Badge>
                            </td>

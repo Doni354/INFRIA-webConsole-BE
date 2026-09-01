@@ -17,13 +17,16 @@ Karena limitasi REST API 1-Response Cycle, INFRIA melakukan mekanisme *Idempoten
 
 ### Fase Awal: User Bertanya
 1. **Client Flutter** mengirimkan chat dari end-user (Misal: `"Tolong check saldo saya di rekening X"`). Dikirim melalui `POST /v1/runtime/chat`.
-2. Middleware Backend mengekstrak API Key `infria_pk_...`, mencocokkannya ke database (Tenant Validation).
-3. **RAG Pipeline Interceptor**: 
-    - Query `"Tolong check saldo..."` dikirim ke OpenAI text-embedding-3-small di Backend.
+2. Middleware Backend mengekstrak API Key `infria_pk_...`, mencocokkannya ke database (Tenant Validation) dalam status Hash SHA-256 (Keamanan Extra).
+3. **Konfigurasi AI Dinamis**: Backend me-load dokumen konfigurasi User (`tone`, `language`, `role`, `assistantName`, dan `knowledgeEnabled`) dari database `config/ai_settings`.
+4. **RAG Pipeline Interceptor**: 
+    - Apabila setting `knowledgeEnabled` true, Query `"Tolong check saldo..."` dikirim ke OpenAI text-embedding-3-small di Backend.
     - Menghasilkan vektor float array.
-    - Backend langsung mencari `findNearest()` secara spesifik ke koleksi database workspace ini saja berbasis algoritma COSINE Firebase Firestore Native Vectors. Menarik TOP K chunks.
-4. Paket Pertanyaan ASLI + String Konteks dari Database RAG dibungkus menjadi Normalized Payload.
-5. Payload Backend dikirim lewat `fetch` ke URL **n8n Webhook Endpoint**.
+    - Backend mencari `findNearest()` secara spesifik ke koleksi database workspace ini saja berbasis algoritma COSINE Firebase Firestore Native Vectors. Menarik TOP K chunks.
+5. Paket Pertanyaan ASLI + String Konteks KNOWLEDGE + Konfigurasi AI + Daftar Fungsi, dibungkus menjadi **Normalized Payload**.
+6. Payload Backend ini dikirim lewat `fetch HTTP` ke URL **n8n Webhook Endpoint**. 
+
+*(Catatan n8n: n8n bertugas sebagai executor kosong. Semua Prompt, Model AI, dan Data Knowledge disuplai dari Payload Backend ini. n8n hanya menjalankan OpenAI Node sesuai request payload kita)*.
 
 ### Fase Loop: Function Calling (Dynamic Action)
 1. **n8n** bersama AI memutuskan bahwa ia tidak cukup data untuk menjawab. AI butuh hit fungsi `check_saldo(rek)`.
@@ -46,7 +49,7 @@ Karena limitasi REST API 1-Response Cycle, INFRIA melakukan mekanisme *Idempoten
 1. Dashboard Web React di INFRIA Console merakit document. User hit Submit.
 2. Hit ke `POST /v1/knowledge/publish`
 3. Backend Server mengubah status Document menjadi `processing`.
-4. Logic: `src/ai/rag/chunker.js` akan memotong string teks artikel memanjang dengan metode Recursive Length Limit (Split di Tanda titik / Spasi kalimat panjang agar RAG presisi dan overlap).
+4. Logic: `src/ai/rag/chunker.js` melakukan **Parsing Murni dari sisi Backend INFRIA**. Metodenya adalah *Recursive Character Threshold Limit*. Teks yang sangat tebal akan dipotong-potong per 1000 karakter, namun sistem mencari spasi ( ) atau titik (.) terdekat agar kalimat tidak putus patah di tengah kata, sambil memberikan 'Overlap' (Tumpang tindih) 200 karakter agar konteks tetap nyambung antar potongan.
 5. Kumpulan Chunker ber-array ini di-lempar dengan metode perulangan asinkron `Promise` ke endpoint provider OpenAI Embedding di `embedding.service.js`.
 6. Menggunakan mekanisme Firestore Batch, Vector Vektor Disimpan ke dalam Collection `knowledge_chunks`.
 7. Saat Frontend membaca collection Knowledge Document, Status akan otomatis bergeser menjadi `Ready`. 
@@ -58,7 +61,9 @@ Karena limitasi REST API 1-Response Cycle, INFRIA melakukan mekanisme *Idempoten
 INFRIA menggunakan pendekatan enkripsi Key untuk menghindari Database Hijacking.
 - Prefix: `infria_pk_` (digunakan secara awalan untuk mudah dideteksi GitHub Secret Scan/Regex standard DevOps).
 - `generateKey` menggunakan Native OS `crypto.randomBytes(16)`.
-- Request hanya mengembalikan `string kunci murni` ini sekali saja kepada layar Modal React dari `response` JSON NodeJs. Sisanya disimpan. Backend Validation `verifyRuntimeApiKey` membedakan identitas dari string ini di masa mendatang. *(Sesuai catatan blueprints, dalam production tingkat tinggi, kunci ini ke depan bisa ditransformasikan menggunakan hash 256 `crypto.pbkdf2Sync` sebagai pengaman extra)*. 
+- Request `generateKey` hanya mengembalikan `string kunci murni` ini sekali saja kepada layar Modal React dari `response` JSON NodeJs.
+- Sisanya dimasukkan ke algoritma **Hash SHA-256 (crypto.createHash)** sebelum disave permanen di Database `key`. 
+- Saat runtime login, NodeJs mencocokkan string Header dengan Hash yang ada di Database. Apabila cocok, akses diberikan! Keamanan setara layanan Payment Gateway.
 
 ---
 **This documentation effectively abstracts and grounds the current implementation of Phase 1 - 9 Source Code into actionable logic.**
