@@ -1,0 +1,4 @@
+app/(project)/[projectId]/knowledge/page.tsx(78,176): error TS2353: Object literal may only specify known properties, and 'label' does not exist in type 'ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | ReactPortal | Promise<...>'.
+app/new/page.tsx(40,55): error TS2322: Type '"flutter" | "react-native" | "ios" | "android"' is not assignable to type '"flutter"'.
+  Type '"react-native"' is not assignable to type '"flutter"'.
+app/new/page.tsx(41,56): error TS2339: Property 'apiKey' does not exist on type 'CreateProjectResult'.

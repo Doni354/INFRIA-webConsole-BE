@@ -1,0 +1,2 @@
+services/project.service.ts(44,7): error TS2322: Type 'ProjectPlatform | undefined' is not assignable to type 'ProjectPlatform'.
+  Type 'undefined' is not assignable to type 'ProjectPlatform'.

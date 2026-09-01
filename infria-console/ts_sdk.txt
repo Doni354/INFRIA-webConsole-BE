@@ -1,0 +1,2 @@
+app/(project)/[projectId]/sdk/page.tsx(7,10): error TS2724: '"@/types"' has no exported member named 'ApiKey'. Did you mean 'APIKey'?
+app/(project)/[projectId]/sdk/page.tsx(58,25): error TS2339: Property 'create' does not exist on type '{ list(projectId: string): Promise<APIKey[]>; generate(projectId: string, name: string): Promise<{ key: APIKey; rawKey: string; }>; revoke(projectId: string, keyId: string): Promise<...>; }'.

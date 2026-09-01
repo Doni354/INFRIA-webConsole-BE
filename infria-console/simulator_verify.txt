@@ -1,0 +1,1 @@
+app/(project)/[projectId]/simulator/page.tsx(133,27): error TS2304: Cannot find name 'Zap'.

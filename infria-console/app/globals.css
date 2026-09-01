@@ -1,0 +1,152 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* Colors - map to css variables for theme switching */
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-active: var(--bg-active);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-disabled: var(--text-disabled);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-border: var(--accent-border);
+
+  --color-status-success: var(--success);
+  --color-status-success-muted: var(--success-muted);
+  --color-status-warning: var(--warning);
+  --color-status-warning-muted: var(--warning-muted);
+  --color-status-error: var(--error);
+  --color-status-error-muted: var(--error-muted);
+  --color-status-info: var(--info);
+  --color-status-info-muted: var(--info-muted);
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --text-xs: 11px;
+  --text-xs--line-height: 1.5;
+  --text-sm: 12px;
+  --text-sm--line-height: 1.5;
+  --text-base: 14px;
+  --text-base--line-height: 1.6;
+  --text-md: 15px;
+  --text-md--line-height: 1.6;
+  --text-lg: 16px;
+  --text-lg--line-height: 1.5;
+  --text-xl: 18px;
+  --text-xl--line-height: 1.4;
+  --text-2xl: 22px;
+  --text-2xl--line-height: 1.3;
+  --text-3xl: 28px;
+  --text-3xl--line-height: 1.3;
+
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+}
+
+@layer base {
+  :root {
+    /* Light Mode */
+    --bg-base: #f8fafc;
+    --bg-surface: #ffffff;
+    --bg-elevated: #f1f5f9;
+    --bg-hover: #e2e8f0;
+    --bg-active: #cbd5e1;
+    
+    --border-subtle: #f1f5f9;
+    --border-default: #e2e8f0;
+    --border-strong: #cbd5e1;
+    
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --text-disabled: #94a3b8;
+    
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --accent-muted: #eff6ff;
+    --accent-border: #bfdbfe;
+    
+    --success: #16a34a;
+    --success-muted: #dcfce7;
+    --warning: #d97706;
+    --warning-muted: #fef3c7;
+    --error: #dc2626;
+    --error-muted: #fee2e2;
+    --info: #2563eb;
+    --info-muted: #dbeafe;
+  }
+
+  .dark {
+    /* Dark Mode */
+    --bg-base: #0a0b0e;
+    --bg-surface: #111318;
+    --bg-elevated: #181b22;
+    --bg-hover: #1e2128;
+    --bg-active: #252932;
+    
+    --border-subtle: #1e2128;
+    --border-default: #2a2e3a;
+    --border-strong: #3d4251;
+    
+    --text-primary: #e8eaed;
+    --text-secondary: #9aa0b0;
+    --text-muted: #5a6070;
+    --text-disabled: #3a3f4d;
+    
+    --accent: #4f8ef5;
+    --accent-hover: #6ba4f7;
+    --accent-muted: #1a2d52;
+    --accent-border: #1e3a6e;
+    
+    --success: #22c55e;
+    --success-muted: #0f2d1a;
+    --warning: #f59e0b;
+    --warning-muted: #2d1f05;
+    --error: #ef4444;
+    --error-muted: #2d0f0f;
+    --info: #3b82f6;
+    --info-muted: #0f1d3a;
+  }
+}
+
+html, body {
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--color-bg-surface); }
+::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+a, button { transition: all 0.15s ease; }

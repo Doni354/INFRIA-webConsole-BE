@@ -1,0 +1,9 @@
+app/(project)/[projectId]/knowledge/page.tsx(36,28): error TS2554: Expected 2 arguments, but got 1.
+app/(project)/[projectId]/knowledge/page.tsx(146,101): error TS2554: Expected 2 arguments, but got 1.
+services/ai.service.ts(40,67): error TS2353: Object literal may only specify known properties, and 'updatedAt' does not exist in type 'PartialWithFieldValue<AIConfig>'.
+services/function.service.ts(29,36): error TS2783: 'id' is specified more than once, so this usage will be overwritten.
+services/function.service.ts(36,14): error TS2783: 'id' is specified more than once, so this usage will be overwritten.
+services/knowledge.service.ts(29,36): error TS2783: 'id' is specified more than once, so this usage will be overwritten.
+services/knowledge.service.ts(36,14): error TS2783: 'id' is specified more than once, so this usage will be overwritten.
+services/project.service.ts(38,36): error TS2783: 'id' is specified more than once, so this usage will be overwritten.
+services/project.service.ts(45,14): error TS2783: 'id' is specified more than once, so this usage will be overwritten.
