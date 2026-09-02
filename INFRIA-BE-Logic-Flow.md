@@ -66,4 +66,106 @@ INFRIA menggunakan pendekatan enkripsi Key untuk menghindari Database Hijacking.
 - Saat runtime login, NodeJs mencocokkan string Header dengan Hash yang ada di Database. Apabila cocok, akses diberikan! Keamanan setara layanan Payment Gateway.
 
 ---
+
+## 5. API Payload Contract Spesification (Runtime Layer)
+Spesifikasi skema komunikasi (JSON payloads) yang mengalir antara Flutter (SDK), Backend, dan Orchestrator (n8n).
+
+### A. Flutter mengirim Chat ke Backend
+Dikirim ke `POST /v1/runtime/chat`
+```json
+{
+  "projectId": "flutter-prod-123",
+  "sessionId": "usr_9988_session",
+  "message": "Cek buku tabungan emas saya"
+}
+```
+
+### B. Backend mengirim Normalized Payload ke n8n (AI Webhook)
+Ini adalah bentuk mentah yang dibaca n8n. Konfigurasi AI dari dashboard Web Console secara dinamis n8n dipassing (di-inject) lewat JSON ini agar n8n mematuhi profil asisten saat mengeksekusi Node OpenAI:
+```json
+{
+  "context": {
+    "tenant": {
+      "workspaceId": "uid_admin_123",
+      "projectId": "flutter-prod-123"
+    },
+    "session": {
+      "id": "usr_9988_session"
+    }
+  },
+  "aiConfig": {
+    "role": "Customer Service",
+    "tone": "friendly",
+    "language": "Indonesian",
+    "providerModel": "gpt-4o-mini",
+    "systemInstructions": "Jawab dengan sopan dan gunakan kata sapaan Kak."
+  },
+  "userMessage": "Cek buku tabungan emas saya",
+  "ragChunks": [
+    "Syarat tabungan emas Infr... (teks hasil Vector DB)"
+  ],
+  "functions": [
+    {
+      "name": "check_saldo",
+      "description": "Mengecek saldo",
+      "parameters": { "type": "object", "properties": { "acc_no": { "type": "string" } } }
+    }
+  ]
+}
+```
+
+### C. n8n Merespons ke Backend 
+N8n bebas memberikan 2 tipe JSON (Chat biasa ATAU Perintah eksekusi fungsi).  
+**Jika Chat Biasa:**
+```json
+{
+  "type": "message",
+  "data": {
+    "content": "Saldo emas Kakak saat ini adalah 2.5 gram."
+  }
+}
+```
+**Jika Butuh Fungsi Backend/Flutter (Looping State):**
+```json
+{
+  "type": "function_call",
+  "data": {
+    "function": "check_saldo",
+    "arguments": { "acc_no": "A-001" }
+  }
+}
+```
+
+### D. Backend me-return hasil n8n tersebut kembali ke Flutter SDK
+Dikirim sebagai response `200 OK`. (Identik dengan format n8n, tapi ditambahi `requestId`).
+```json
+{
+  "requestId": "req_1234abcd",
+  "type": "function_call",
+  "data": {
+    "function": "check_saldo",
+    "arguments": { "acc_no": "A-001" }
+  }
+}
+```
+
+### E. Flutter menyelesaikan Eksekusi Logic dan meresume (Callback result kembali)
+Dikirim ke `POST /v1/runtime/function-result`.
+```json
+{
+  "requestId": "req_1234abcd",
+  "functionCallId": "fc_8877",
+  "function": {
+    "name": "check_saldo",
+    "arguments": { "acc_no": "A-001" }
+  },
+  "result": {
+    "status": "success",
+    "saldoGrams": 2.5
+  }
+}
+```
+*Backend akan menyimpan result ini ke State tracking, lalu mem-resume n8n dengan payload format B (ditambah function execution context) untuk menghasilkan akhir format C.*
+
+---
 **This documentation effectively abstracts and grounds the current implementation of Phase 1 - 9 Source Code into actionable logic.**

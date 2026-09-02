@@ -52,7 +52,7 @@ export const projectService = {
       description: input.description || "",
       platform: input.platform || null,
       status: "active",
-      publicApiKey: maskApiKey(rawKey),
+      publicApiKey: rawKey,
       knowledgeCount: 0,
       functionCount: 0,
       createdAt: now(),
