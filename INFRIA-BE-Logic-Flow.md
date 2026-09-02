@@ -72,6 +72,21 @@ Spesifikasi skema komunikasi (JSON payloads) yang mengalir antara Flutter (SDK),
 
 ### A. Flutter mengirim Chat ke Backend
 Dikirim ke `POST /v1/runtime/chat`
+
+**Penting - Autentikasi (Headers):**
+Flutter WAJIB mengirimkan `x-api-key` di Headers. 
+**[INFO API KEY]:** API Key yang dipakai di sini **BUKAN** `publicApiKey` yang otomatis terbuat dari awal project. `publicApiKey` nantinya hanya untuk verifikasi App Registry biasa.
+Key yang dipakai di Endpoint ini adalah **Backend API Keys** / **Secret Key** yang wajib di-generate manual oleh user dari Web Console > **Menu SDK** > Bagian bawah **"Backend API Keys"** (Yang awalnya disembunyikan `••••`).
+```http
+Headers:
+x-api-key: infria_pk_db12a83xxxxxxxxxx
+Content-Type: application/json
+```
+
+**Body Request:**
+- `projectId`: Diambil langsung dari list Project. (Wajib cocok dengan kepemilikan API Key).
+- `sessionId`: String unik bebas dari dev Flutter yang menandakan sesi spesifik (misal ID device/uid app pengguna akhir). Supaya n8n tahu history percakapannya.
+- `message`: Teks atau prompt dari user.
 ```json
 {
   "projectId": "flutter-prod-123",

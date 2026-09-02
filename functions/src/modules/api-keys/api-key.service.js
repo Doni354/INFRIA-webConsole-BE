@@ -9,7 +9,6 @@ const generateKey = async (tenant, params) => {
   const randomStr = crypto.randomBytes(16).toString('hex');
   const rawKey = `${prefix}${randomStr}`;
   
-  // Hash implementation applied for Database Storage
   const hashedKey = hashKey(rawKey);
   
   const newRef = db.collection(`users/${tenant.uid}/projects/${tenant.projectId}/api_keys`).doc();
@@ -21,6 +20,14 @@ const generateKey = async (tenant, params) => {
     createdAt: Date.now(),
     status: 'active'
   });
+
+  // Fast-Lane O(1) Global Lookup mapping (Bypass collectionGroup index requirement)
+  await db.collection('global_api_keys').doc(hashedKey).set({
+    workspaceId: tenant.uid,
+    projectId: tenant.projectId,
+    keyId: newRef.id,
+    status: 'active'
+  });
   
   logger.info({ apiKeyId: newRef.id }, 'API Key generated securely');
   
@@ -29,12 +36,30 @@ const generateKey = async (tenant, params) => {
 };
 
 const revokeKey = async (tenant, keyId) => {
-  const ref = db.doc(`users/${tenant.uid}/projects/${tenant.projectId}/api_keys/${keyId}`);
-  await ref.update({ 
-    status: 'revoked', 
-    revokedAt: Date.now() 
+  const docRef = db.doc(`users/${tenant.uid}/projects/${tenant.projectId}/api_keys/${keyId}`);
+  
+  const docSnap = await docRef.get();
+  if (!docSnap.exists) {
+    throw Object.assign(new Error('Key not found'), { status: 404 });
+  }
+
+  const keyData = docSnap.data();
+
+  // Dual revoke
+  await docRef.update({ 
+    status: 'revoked',
+    revokedAt: Date.now()
   });
-  logger.info({ apiKeyId: keyId }, 'API Key revoked');
+
+  if (keyData.key) {
+    // keyData.key contains the Hashed String.
+    await db.collection('global_api_keys').doc(keyData.key).update({
+      status: 'revoked'
+    }).catch(() => null); // ignore if it doesn't exist to not break backwards compatibility
+  }
+
+  logger.info({ keyId }, 'API Key revoked successfully');
+  return { status: 'success' };
 };
 
 module.exports = { generateKey, revokeKey };

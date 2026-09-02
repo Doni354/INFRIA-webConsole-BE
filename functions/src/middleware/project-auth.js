@@ -16,28 +16,19 @@ const verifyRuntimeApiKey = async (req, res, next) => {
   try {
     const hashedKey = hashKey(apiKey);
     
-    const keysSnapshot = await db.collectionGroup('api_keys')
-      .where('key', '==', hashedKey)
-      .where('status', '==', 'active')
-      .limit(1)
-      .get();
+    // Fast-Lane O(1) Index-free Validation 
+    const globalKeyRef = await db.collection('global_api_keys').doc(hashedKey).get();
 
-    if (keysSnapshot.empty) {
+    if (!globalKeyRef.exists || globalKeyRef.data().status !== 'active') {
       return res.status(401).json({
-        error: { code: 'INVALID_API_KEY', message: 'The provided API key is invalid.', requestId: req.id }
+        error: { code: 'INVALID_API_KEY', message: 'The provided API key is invalid or revoked.', text_debug: hashedKey, requestId: req.id }
       });
     }
 
-    const keyDoc = keysSnapshot.docs[0];
-    
-    // Blueprint Sec 14: Tenant Resolution
-    // Pattern: users/{uid}/projects/{projectId}/api_keys/{keyId}
-    const pathSegments = keyDoc.ref.path.split('/');
-    const uid = pathSegments[1];
-    const projectId = pathSegments[3];
+    const keyData = globalKeyRef.data();
     
     // Blueprint Sec 13: Verify Project Ownership & Status
-    const projectRef = db.doc(`users/${uid}/projects/${projectId}`);
+    const projectRef = db.doc(`users/${keyData.workspaceId}/projects/${keyData.projectId}`);
     const projectSnap = await projectRef.get();
     
     if (!projectSnap.exists || projectSnap.data().status !== 'active') {
@@ -48,9 +39,9 @@ const verifyRuntimeApiKey = async (req, res, next) => {
 
     // TenantContext Builder
     req.tenant = {
-      workspaceId: uid,
-      projectId: projectId,
-      apiKeyId: keyDoc.id
+      workspaceId: keyData.workspaceId,
+      projectId: keyData.projectId,
+      apiKeyId: keyData.keyId
     };
     
     next();
@@ -62,4 +53,29 @@ const verifyRuntimeApiKey = async (req, res, next) => {
   }
 };
 
-module.exports = { verifyRuntimeApiKey };
+const { auth } = require('../config/firebase');
+
+const verifyConsoleAuth = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      error: { code: 'UNAUTHORIZED', message: 'Missing or invalid authorization header', requestId: req.id }
+    });
+  }
+
+  const token = authHeader.split('Bearer ')[1];
+  
+  try {
+    const decodedToken = await auth.verifyIdToken(token);
+    req.user = { uid: decodedToken.uid, email: decodedToken.email };
+    next();
+  } catch (error) {
+    logger.error({ err: error, reqId: req.id }, 'Invalid Firebase ID token');
+    return res.status(401).json({
+      error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token', requestId: req.id }
+    });
+  }
+};
+
+module.exports = { verifyRuntimeApiKey, verifyConsoleAuth };
