@@ -55,61 +55,39 @@ export default function SimulatorPage() {
     
     // 2. Start Processing Simulation
     setIsTyping(true);
-    addLog("system", `[ROUTER] Received incoming message: "${userMsg}"`);
+    addLog("system", `[ROUTER] Dispatching simulated SDK context over HTTP...`);
     
-    // Fake processing delay
-    await new Promise(r => setTimeout(r, 600));
-
-    const lowercaseMsg = userMsg.toLowerCase();
-    
-    if (lowercaseMsg.includes("pesanan") || lowercaseMsg.includes("batal")) {
-      // Simulate Function Call scenario
-      addLog("system", "[ROUTER] Intent identified: ACTION_REQUIRED");
-      await new Promise(r => setTimeout(r, 500));
-      addLog("function", "[FUNCTION_CALL] Determining suitable tools... Found: 'cancel_order'");
-      await new Promise(r => setTimeout(r, 800));
-      addLog("system", '[EXECUTION] Pausing LLM stream. dispatching callback to Flutter SDK: cancel_order({"order_id": "auto-filled"})');
-      await new Promise(r => setTimeout(r, 1200));
-      addLog("function", "[SDK_RESPONSE] Received callback from client: { status: 'CANCELLED_SUCCESS' }");
-      await new Promise(r => setTimeout(r, 600));
-      addLog("llm", "[LLM] Generating natural response based on SDK callback context...");
-      
-      setIsTyping(false);
-      setMessages(prev => [...prev, { 
-        id: Math.random().toString(), 
-        role: "assistant", 
-        content: "Baik, pesanan Anda telah berhasil dibatalkan sesuai instruksi dari sistem kami. Ada hal lain yang bisa dibantu?" 
-      }]);
-
-    } else if (lowercaseMsg.includes("refund") || lowercaseMsg.includes("syarat") || lowercaseMsg.includes("kebijakan")) {
-      // Simulate RAG scenario
-      addLog("system", "[ROUTER] Intent identified: KNOWLEDGE_RETRIEVAL");
-      await new Promise(r => setTimeout(r, 600));
-      addLog("rag", "[VECTOR_DB] Querying chunks with similarity threshold > 0.75...");
-      await new Promise(r => setTimeout(r, 800));
-      addLog("rag", "[RETRIEVED] Found 3 chunks from document: 'Kebijakan Pengembalian Dana 2026'");
-      await new Promise(r => setTimeout(r, 800));
-      addLog("llm", "[LLM] Augmenting prompt with retrieved chunks. Generating response...");
-      
-      setIsTyping(false);
-      setMessages(prev => [...prev, { 
-        id: Math.random().toString(), 
-        role: "assistant", 
-        content: "Menurut kebijakan kami, proses pengembalian dana (refund) dapat diajukan maksimal 7 hari setelah barang diterima, dengan syarat tag masih utuh. Apakah Anda ingin mengajukan refund sekarang?" 
-      }]);
-
-    } else {
-      // Simulate General Chit Chat
-      addLog("system", "[ROUTER] Intent identified: GENERAL_CONVERSATION");
-      await new Promise(r => setTimeout(r, 500));
-      addLog("llm", "[LLM] Generating response direct from base model...");
-      
-      setIsTyping(false);
-      setMessages(prev => [...prev, { 
-        id: Math.random().toString(), 
-        role: "assistant", 
-        content: "Mohon maaf, saya adalah asisten toko Anda. Saya bisa membantu mengecek pesanan, membatalkan transaksi, atau menjelaskan peraturan toko. Silakan tanyakan hal tersebut ya." 
-      }]);
+    try {
+        const { auth } = await import('@/lib/firebase');
+        const token = await auth.currentUser?.getIdToken();
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/runtime/console-simulator`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({ projectId: (window.location.pathname.split('/')[1] || "fallback"), sessionId: "simulator_session", message: userMsg })
+        });
+        
+        if (!res.ok) {
+            const e = await res.json().catch(()=>({}));
+            throw new Error(e?.error?.message || "Failed to reach Backend");
+        }
+        
+        const jsonResp = await res.json();
+        
+        addLog("system", `[RESPONSE] Status 200 OK. Request ID: ${jsonResp.requestId}`);
+        
+        if (jsonResp.type === "message") {
+            addLog("llm", `[LLM] Generated message response received`);
+            setMessages(prev => [...prev, { id: Math.random().toString(), role: "assistant", content: jsonResp.data.content }]);
+        } else if (jsonResp.type === "function_call") {
+             addLog("function", `[NATIVE LOOP] Requested function execution: ${jsonResp.data.function}`);
+             // Need to simulate hitting function result endpoint
+             setMessages(prev => [...prev, { id: Math.random().toString(), role: "assistant", content: `[SYSTEM] AI meminta eksekusi Function: ${jsonResp.data.function}` }]);
+        }
+        
+    } catch(e: any) {
+        addLog("error", `[ERROR] ${e.message}`);
+    } finally {
+        setIsTyping(false);
     }
   };
 
