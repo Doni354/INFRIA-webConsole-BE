@@ -8,6 +8,14 @@ Ini adalah dokumentasi *source-of-truth* mengenai alur dan fondasi logika backen
 3. **No Direct LLM in Backend**: Backend INFRIA (`src/modules/runtime`) tidak secara langsung mengirim logic ke Prompt OpenAI. Ia membungkus parameter User dari Flutter, menambahkan hasil Vector Search, dan mengirimkan payload *bersih* (Normalized Payload) dkk ke orchestrator **n8n**.
 4. **Analytics Asynchronous**: Semua pencatatan traffic dan token akan di-push secara asinkron menggunakan system 'fire-and-forget' agar tidak membebani latency utama untuk Flutter API. (`analytics.service.js`).
 
+### 1.5 Pre-Orchestration Extraction Pipeline (Bagaimana BE menyiapkan data tanpa LLM)
+Walaupun Backend NodeJs membebani n8n dengan tugas berat memikirkan nalar (reasoning), Backend secara cerdik memiliki "Mini-AI" pipeline tersendiri untuk mengekstrak konteks, yaitu:
+1. **Penerjemah Bahasa ke Vector (Embedding):** Backend memanggil API OpenAI (Model `text-embedding-3-small`) setiap kali end-user melempar pertanyaan (`/runtime/chat`), untuk merubah kalimat manusia menjadi hitungan matriks matematika Vector. (API ini tidak menggunakan model LLM Text/Chat, harganya sangat murah).
+2. **Mesin Penelusur RAG Mandiri:** Setelah Backend mendapat "angka-angka vector" tersebut, Backend **murni menggunakan fitur Firestore Native Search (`findNearest` Cosine Similarity DB)** untuk merangking kecocokan paragraf dan menarik top 3 / 5 text paragraf dokumen yang paling relevan dengan inti pertanyaan sang user! (Inilah rahasianya kenapa RAG INFRIA super cepat dan tidak butuh framework Python tambahan).
+3. **App Capabilities (Function Binding):** Backend langsung me-*load* secara buta dari Firestore daftar seluruh fitur/fungsi (*Capabilities*) yang di-set "Active" oleh user. Backend tidak menyeleksi atau memfilter function apa yang harus dipakai (n8n yang akan repot membaca ini semua dan memutuskan).
+
+Semua hal di atas dibungkus rapi menjadi JSON `Normalized Payload` (Lihat poin 5) yang lurus-lurus aja dikirimkan utuh melalui HTTP POST (`Webhook`) ke pintu gerbang n8n (Orchestrator).
+
 ---
 
 ## 2. Alur Native Eksekusi Runtime Chat (The Loop)
@@ -96,36 +104,41 @@ Content-Type: application/json
 ```
 
 ### B. Backend mengirim Normalized Payload ke n8n (AI Webhook)
-Ini adalah bentuk mentah yang dibaca n8n. Konfigurasi AI dari dashboard Web Console secara dinamis n8n dipassing (di-inject) lewat JSON ini agar n8n mematuhi profil asisten saat mengeksekusi Node OpenAI:
+Ini adalah bentuk mentah (real) yang dibaca n8n hasil dari `orchestration.service.js`. Semua variabel dipassing (di-inject) lewat JSON ini agar n8n mematuhi profil asisten saat mengeksekusi Node OpenAI:
 ```json
 {
-  "context": {
-    "tenant": {
-      "workspaceId": "uid_admin_123",
-      "projectId": "flutter-prod-123"
-    },
-    "session": {
-      "id": "usr_9988_session"
-    }
+  "project": {
+    "id": "flutter-prod-123"
   },
-  "aiConfig": {
+  "session": {
+    "id": "usr_9988_session"
+  },
+  "user": {
+    "id": "uid_admin_123"
+  },
+  "ai": {
+    "assistantName": "INFRIA Assistant",
     "role": "Customer Service",
+    "language": "id",
     "tone": "friendly",
-    "language": "Indonesian",
-    "providerModel": "gpt-4o-mini",
-    "systemInstructions": "Jawab dengan sopan dan gunakan kata sapaan Kak."
+    "model": "gpt-4o-mini"
   },
-  "userMessage": "Cek buku tabungan emas saya",
-  "ragChunks": [
-    "Syarat tabungan emas Infr... (teks hasil Vector DB)"
-  ],
+  "knowledge": {
+    "enabled": true,
+    "context": [
+      "Syarat tabungan emas Infr... (teks 1)",
+      "Potongan paragraf relevan... (teks 2)"
+    ]
+  },
   "functions": [
     {
+      "id": "doc_id_99",
       "name": "check_saldo",
       "description": "Mengecek saldo",
       "parameters": { "type": "object", "properties": { "acc_no": { "type": "string" } } }
     }
-  ]
+  ],
+  "message": "Cek buku tabungan emas saya"
 }
 ```
 

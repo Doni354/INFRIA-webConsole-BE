@@ -17,6 +17,7 @@ type TraceLog = {
 };
 
 export default function SimulatorPage() {
+  const [sessionId, setSessionId] = useState("sim_" + Math.random().toString(36).substring(2, 9));
   const [messages, setMessages] = useState<Message[]>([
     { id: "1", role: "assistant", content: "Halo! Saya INFRIA Assistant. Ada yang bisa saya bantu terkait aplikasi ini?" }
   ]);
@@ -25,6 +26,12 @@ export default function SimulatorPage() {
   const [logs, setLogs] = useState<TraceLog[]>([]);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const resetSession = () => {
+    setSessionId("sim_" + Math.random().toString(36).substring(2, 9));
+    setMessages([{ id: "1", role: "assistant", content: "Halo! Saya INFRIA Assistant. Ada yang bisa saya bantu terkait aplikasi ini?" }]);
+    setLogs([]);
+  };
 
   // Auto scroll logs
   useEffect(() => {
@@ -63,7 +70,7 @@ export default function SimulatorPage() {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/runtime/console-simulator`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-            body: JSON.stringify({ projectId: (window.location.pathname.split('/')[1] || "fallback"), sessionId: "simulator_session", message: userMsg })
+            body: JSON.stringify({ projectId: (window.location.pathname.split('/')[1] || "fallback"), sessionId: sessionId, message: userMsg })
         });
         
         if (!res.ok) {
@@ -73,15 +80,30 @@ export default function SimulatorPage() {
         
         const jsonResp = await res.json();
         
-        addLog("system", `[RESPONSE] Status 200 OK. Request ID: ${jsonResp.requestId}`);
+        addLog("system", `[RESPONSE] BE 200 OK. Request ID: ${jsonResp.requestId}`);
+        
+        // Print Detailed Traces if provided by backend simulator mode
+        if (jsonResp.__trace) {
+          const t = jsonResp.__trace;
+          addLog("system", `[N8N PAYLOAD] Dispatching normalized context to n8n webhook...`);
+          addLog("function", `[N8N INJECTION] Embedded ${t.functionsInjected} active JSON Function Schemas.`);
+          
+          if (t.ragFallback) {
+             addLog("rag", `[RAG MISS] Backend found NO context satisfying ${Math.round((t.ragThreshold || 0)*100)}% threshold in Database.`);
+          } else if (t.ragChunksInjected > 0) {
+             addLog("rag", `[RAG HIT] Threshold ≥ ${Math.round((t.ragThreshold || 0)*100)}% passed. Sourced ${t.ragChunksInjected}/${t.ragTopK} chunks from VectorDB.`);
+             t.chunksPreview.forEach((txt: string, idx: number) => {
+                addLog("rag", `  ↳ Chunk ${idx+1}: "${txt}"`);
+             });
+          }
+        }
         
         if (jsonResp.type === "message") {
-            addLog("llm", `[LLM] Generated message response received`);
+            addLog("llm", `[LLM] Generated message output from N8N OpenAi Node received.`);
             setMessages(prev => [...prev, { id: Math.random().toString(), role: "assistant", content: jsonResp.data.content }]);
         } else if (jsonResp.type === "function_call") {
-             addLog("function", `[NATIVE LOOP] Requested function execution: ${jsonResp.data.function}`);
-             // Need to simulate hitting function result endpoint
-             setMessages(prev => [...prev, { id: Math.random().toString(), role: "assistant", content: `[SYSTEM] AI meminta eksekusi Function: ${jsonResp.data.function}` }]);
+             addLog("function", `[NATIVE LOOP] Flow paused. N8N requested Client-Side function execution: ${jsonResp.data.function}()`);
+             setMessages(prev => [...prev, { id: Math.random().toString(), role: "assistant", content: `[SYSTEM] Flow Intercepted: AI meminta pengeksekusian fitur aplikasi (Function): ${jsonResp.data.function}` }]);
         }
         
     } catch(e: any) {
@@ -119,7 +141,7 @@ export default function SimulatorPage() {
           <h1 className="text-xl font-bold text-text-primary mb-1">Simulator & Trace Debugger</h1>
           <p className="text-text-secondary text-sm">Test your RAG and Function Calling logic in real-time.</p>
         </div>
-        <button onClick={() => { setMessages([{ id: "1", role: "assistant", content: "Halo! Saya INFRIA Assistant. Ada yang bisa saya bantu terkait aplikasi ini?" }]); setLogs([]); }} className="text-sm font-medium text-accent hover:underline">
+        <button onClick={resetSession} className="text-sm font-medium text-accent hover:underline">
           Reset Session
         </button>
       </div>

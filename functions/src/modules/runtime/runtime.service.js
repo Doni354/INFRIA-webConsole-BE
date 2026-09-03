@@ -45,6 +45,18 @@ const processChat = async (tenant, sessionId, message) => {
     context: ragResult.context
   });
 
+  // Simulator Visibility enhancement: Attach trace metrics so React console can log it
+  if (tenant.apiKeyId === 'simulator_mode') {
+    response.__trace = {
+      functionsInjected: functions.length,
+      ragChunksInjected: ragResult.context.length,
+      ragThreshold: aiConfig.retrievalThreshold,
+      ragTopK: aiConfig.retrievalTopK,
+      ragFallback: ragResult.fallback,
+      chunksPreview: ragResult.context.map(c => c.substring(0, 75) + "...")
+    };
+  }
+
   return response;
 };
 
