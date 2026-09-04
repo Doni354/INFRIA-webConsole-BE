@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
 import { Send, Smartphone, TerminalSquare, AlertTriangle, Code2, Database, Zap } from "lucide-react";
 
 type Message = {
@@ -91,7 +92,8 @@ export default function SimulatorPage() {
           if (t.ragFallback) {
              addLog("rag", `[RAG MISS] Backend found NO context satisfying ${Math.round((t.ragThreshold || 0)*100)}% threshold in Database.`);
           } else if (t.ragChunksInjected > 0) {
-             addLog("rag", `[RAG HIT] Threshold ≥ ${Math.round((t.ragThreshold || 0)*100)}% passed. Sourced ${t.ragChunksInjected}/${t.ragTopK} chunks from VectorDB.`);
+             const fallbackTopK = t.ragTopK || t.ragChunksInjected;
+             addLog("rag", `[RAG HIT] Threshold ≥ ${Math.round((t.ragThreshold || 0)*100)}% passed. Sourced ${t.ragChunksInjected}/${fallbackTopK} chunks from VectorDB.`);
              t.chunksPreview.forEach((txt: string, idx: number) => {
                 addLog("rag", `  ↳ Chunk ${idx+1}: "${txt}"`);
              });
@@ -163,7 +165,15 @@ export default function SimulatorPage() {
             {messages.map((msg) => (
               <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[85%] rounded-lg px-4 py-3 text-sm leading-relaxed shadow-sm border ${msg.role === "user" ? "bg-accent text-white border-accent" : "bg-bg-surface text-text-primary border-border-strong"}`}>
-                  {msg.content}
+                  {msg.role === "user" ? (
+                    msg.content
+                  ) : (
+                    <div className="prose prose-sm prose-invert max-w-none text-text-primary leading-relaxed">
+                      <ReactMarkdown>
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

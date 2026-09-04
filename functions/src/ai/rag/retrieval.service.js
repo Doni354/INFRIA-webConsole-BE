@@ -21,10 +21,15 @@ const retrieveContext = async (tenant, aiConfig, query, topK = 5) => {
     // Data isolated deeply by UID & ProjectId
     const chunksRef = db.collection(`users/${tenant.workspaceId}/projects/${tenant.projectId}/knowledge_chunks`);
     
-    // Nearest neighbor search
+    const simThreshold = aiConfig && typeof aiConfig.retrievalThreshold === 'number' ? aiConfig.retrievalThreshold : 0.70;
+    const searchTopK = aiConfig && typeof aiConfig.retrievalTopK === 'number' ? aiConfig.retrievalTopK : topK;
+    const maxCosineDistance = 1.0 - simThreshold; // Firestore Cosine Distance = 1 - Similarity (OpenAI embedded)
+
+    // Nearest neighbor search with STRICT Cosine Threshold
     const vectorQuery = chunksRef.findNearest('embedding', queryVector, {
-      limit: topK,
-      distanceMeasure: 'COSINE' 
+      limit: searchTopK,
+      distanceMeasure: 'COSINE',
+      distanceThreshold: maxCosineDistance
     });
 
     const snapshot = await vectorQuery.get();

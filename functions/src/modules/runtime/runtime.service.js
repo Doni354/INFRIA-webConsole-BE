@@ -50,8 +50,8 @@ const processChat = async (tenant, sessionId, message) => {
     response.__trace = {
       functionsInjected: functions.length,
       ragChunksInjected: ragResult.context.length,
-      ragThreshold: aiConfig.retrievalThreshold,
-      ragTopK: aiConfig.retrievalTopK,
+      ragThreshold: typeof aiConfig.retrievalThreshold === 'number' ? aiConfig.retrievalThreshold : 0.70,
+      ragTopK: typeof aiConfig.retrievalTopK === 'number' ? aiConfig.retrievalTopK : 5,
       ragFallback: ragResult.fallback,
       chunksPreview: ragResult.context.map(c => c.substring(0, 75) + "...")
     };
