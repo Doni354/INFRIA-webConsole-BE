@@ -14,15 +14,15 @@ function getUid(): string {
 const defaultConfig = (projectId: string): AIConfig => ({
   projectId,
   assistantName: "INFRIA Assistant",
-  role: "Customer Service",
-  language: "Indonesian",
+  role: "Customer Support",
+  language: "English",
   tone: "friendly",
   providerModel: "gpt-4o-mini",
   providerApiKey: null,
   systemInstructions:
-    "Kamu adalah asisten AI yang membantu menjawab pertanyaan pengguna dengan ramah dan informatif.",
+    "You are a helpful, accurate, and professional AI assistant. Provide concise and polite responses based on the provided context.",
   fallbackMessage:
-    "Maaf, saya tidak dapat menjawab pertanyaan tersebut saat ini. Silakan hubungi tim kami.",
+    "I apologize, but I do not have enough information to answer that question right now. Please reach out to our support team for assistance.",
   retrievalTopK: 5,
   retrievalThreshold: 0.7,
   knowledgeEnabled: true,

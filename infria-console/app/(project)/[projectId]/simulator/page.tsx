@@ -17,6 +17,7 @@ import {
   MessageSquare,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
 } from "lucide-react";
 import { runtimeTestService } from "@/services/runtime-test.service";
 import { chatSessionService, ChatSession } from "@/services/chatSession.service";
@@ -559,6 +560,22 @@ export default function SimulatorPage() {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-bg-base">
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full text-center px-4 py-8 space-y-3 my-auto">
+                <div className="w-10 h-10 rounded-full bg-accent-muted border border-accent-border flex items-center justify-center text-accent">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-text-primary">
+                    Simulator Session Ready
+                  </h3>
+                  <p className="text-xs text-text-muted max-w-xs">
+                    Type a message below to test how your AI routes queries, retrieves knowledge docs, and executes function tools in real time.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -572,9 +589,11 @@ export default function SimulatorPage() {
                   }`}
                 >
                   {msg.role === "user" ? (
-                    msg.content
+                    <div className="prose prose-sm max-w-none text-white prose-p:my-0 prose-strong:text-white prose-strong:font-bold prose-code:text-white prose-code:bg-white/20 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-black/30 prose-pre:text-white leading-relaxed">
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </div>
                   ) : (
-                    <div className="prose prose-sm max-w-none text-text-primary leading-relaxed">
+                    <div className="prose prose-sm max-w-none text-text-primary dark:prose-invert leading-relaxed prose-p:my-1 prose-strong:text-text-primary dark:prose-strong:text-white prose-strong:font-bold prose-code:text-accent prose-code:bg-bg-elevated prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-bg-elevated prose-pre:border prose-pre:border-border-default">
                       <ReactMarkdown>{msg.content}</ReactMarkdown>
                     </div>
                   )}

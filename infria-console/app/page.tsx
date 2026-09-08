@@ -18,10 +18,12 @@ import {
   Clock,
   ChevronRight,
   LogOut,
+  Sparkles,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { Badge } from "@/components/ui/Badge";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
 
 function generateId() {
   return Math.random().toString(36).slice(2);
@@ -231,7 +233,7 @@ export default function ConsoleLandingPage() {
             </h2>
             <Link
               href="/new"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-accent text-white text-sm font-medium rounded-md hover:bg-accent-hover transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-accent text-white text-xs font-semibold rounded-md hover:bg-accent-hover transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
               New Project
@@ -247,8 +249,7 @@ export default function ConsoleLandingPage() {
                 No projects yet
               </h3>
               <p className="text-sm text-text-muted mb-6 max-w-sm mx-auto">
-                Create your first INFRIA project to start building AI-powered
-                infrastructure.
+                Create your first INFRIA project to start building AI-powered infrastructure.
               </p>
               <Link
                 href="/new"
@@ -436,13 +437,21 @@ export default function ConsoleLandingPage() {
                   )}
                   <div className="max-w-[75%]">
                     <div
-                      className={`px-3 py-2 rounded-lg text-sm leading-relaxed ${
+                      className={`px-3.5 py-2.5 rounded-xl text-sm leading-relaxed shadow-sm ${
                         msg.role === "user"
                           ? "bg-accent text-white"
                           : "bg-bg-surface border border-border-default text-text-primary"
                       }`}
                     >
-                      {msg.content}
+                      {msg.role === "user" ? (
+                        <div className="prose prose-sm max-w-none text-white prose-p:my-0 prose-strong:text-white prose-strong:font-bold prose-code:text-white prose-code:bg-white/20 prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </div>
+                      ) : (
+                        <div className="prose prose-sm max-w-none text-text-primary dark:prose-invert leading-relaxed prose-p:my-0.5 prose-strong:text-text-primary dark:prose-strong:text-white prose-strong:font-bold prose-code:text-accent prose-code:bg-bg-elevated prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </div>
+                      )}
                     </div>
                     {msg.role === "assistant" && msg.metadata && (
                       <div className="flex items-center gap-3 mt-1 px-1 flex-wrap">
