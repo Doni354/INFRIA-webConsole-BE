@@ -66,15 +66,28 @@ Sebelum bisa integrasi, developer Flutter cukup minta dua hal ke **owner project
 
 ## 2. Konfigurasi SDK
 
-### pubspec.yaml
+### Option A: Via INFRIA CLI (Recommended)
+
+```bash
+# 1. Install global CLI
+dart pub global activate infria_cli
+
+# 2. Login & hubungkan project kamu
+infria login
+infria init --project=my-store-7f42
+```
+
+### Option B: Via Flutter Pub
+
+```bash
+flutter pub add infria_sdk
+```
+
+Atau manual di `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  infria: ^1.0.0
-  # atau via git jika belum di pub.dev:
-  # infria:
-  #   git:
-  #     url: https://github.com/infria/flutter-sdk.git
+  infria_sdk: ^1.0.0
 ```
 
 ### Environment Config (untuk App Developer)
@@ -108,19 +121,19 @@ flutter run \
 
 > ### 🛠️ Catatan untuk SDK Developer (bukan app developer)
 >
-> Kamu yang buat paket `infria` harus hardcode URL backend n8n di dalam SDK, bukan expose ke pengguna SDK.
+> Kamu yang buat paket `infria_sdk` harus hardcode URL backend Cloud Functions (BE API) di dalam SDK, bukan expose ke pengguna SDK (Flutter hit Cloud Functions BE, lalu BE yang koordinasi dengan n8n).
 >
 > ```dart
-> // Di dalam source code SDK (infria/lib/src/config.dart)
+> // Di dalam source code SDK (infria_sdk/lib/src/config.dart)
 > // Ini TIDAK terekspos ke pubspec atau environment app developer
 > class InfriaConfig {
->   // Hardcode sesuai deployment n8n kamu
->   static const String _baseUrl = 'https://n8n.infria.io';
+>   // Hardcode URL Cloud Functions BE kamu
+>   static const String _baseUrl = 'https://api.infria.io';
 >
->   // Atau: bisa support multi-environment via SDK build flag
+>   // Atau support multi-environment via SDK build flag
 >   // static const String _baseUrl = String.fromEnvironment(
 >   //   'INFRIA_INTERNAL_BASE_URL',
->   //   defaultValue: 'https://n8n.infria.io',
+>   //   defaultValue: 'https://api.infria.io',
 >   // );
 >
 >   static String get baseUrl => _baseUrl;

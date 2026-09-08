@@ -368,26 +368,35 @@ export default function ConsoleLandingPage() {
           <div className="bg-bg-surface border border-border-default rounded-xl overflow-hidden">
             {/* Project selector for AI test */}
             {projects.length > 0 && (
-              <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center gap-3">
-                <Bot className="w-4 h-4 text-accent flex-shrink-0" />
-                <span className="text-sm text-text-muted">Testing project:</span>
-                <select
-                  value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                  className="text-sm font-medium text-text-primary bg-transparent border-none outline-none cursor-pointer"
-                  aria-label="Select project for AI test"
-                >
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="ml-auto flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-accent" />
-                  <span className="text-xs text-text-muted">
-                    Source: DASHBOARD
-                  </span>
+              <div className="px-4 py-2 border-b border-border-subtle bg-bg-elevated flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Bot className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                  <span className="text-xs text-text-muted">Project:</span>
+                  <div className="relative inline-flex items-center">
+                    <select
+                      value={selectedProjectId}
+                      onChange={(e) => setSelectedProjectId(e.target.value)}
+                      className="appearance-none pl-2.5 pr-6 py-1 rounded-md text-xs font-medium text-text-primary bg-bg-base border border-border-default hover:border-border-strong focus:border-accent focus:outline-none cursor-pointer transition-colors"
+                      aria-label="Select project for AI test"
+                      style={{ colorScheme: "inherit" }}
+                    >
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    {/* Custom chevron icon */}
+                    <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-text-muted">
+                      <svg width="8" height="5" viewBox="0 0 10 6" fill="none">
+                        <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+                  <span className="text-[11px] font-mono text-text-muted">READY</span>
                 </div>
               </div>
             )}

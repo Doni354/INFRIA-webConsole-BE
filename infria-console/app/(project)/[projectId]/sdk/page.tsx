@@ -8,7 +8,7 @@ import { APIKey, Project } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Key, Plus, Trash2, Copy, CheckCircle2, Eye, EyeOff, Loader2, Search, ArrowUpDown } from "lucide-react";
+import { Key, Plus, Trash2, Copy, CheckCircle2, Eye, EyeOff, Loader2, Search, ArrowUpDown, Terminal } from "lucide-react";
 import { CodeBlock } from "@/components/ui/CodeBlock";
 
 export default function AppSettingsPage() {
@@ -30,6 +30,7 @@ export default function AppSettingsPage() {
   // View state
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [newlyGeneratedKey, setNewlyGeneratedKey] = useState<string | null>(null);
+  const [setupMethod, setSetupMethod] = useState<"cli" | "pub">("cli");
 
   // Load apps from localStorage (sync logic with Overview)
   const [registeredApps, setRegisteredApps] = useState<{ id: string, name: string, platform: string, packageInfo?: string }[]>([]);
@@ -166,6 +167,7 @@ app.platform === 'flutter' ?
 void main() async {
   await Infria.initializeApp(
      projectId: '${projectId}',
+     apiKey: 'YOUR_API_KEY',
      appName: '${app.name}'
   );
 }` : app.platform === 'web' ? 
@@ -173,6 +175,7 @@ void main() async {
 
 const app = initializeApp({
   projectId: '${projectId}',
+  apiKey: 'YOUR_API_KEY',
   appName: '${app.name}'
 });` : `// Initialize matching ${app.platform} client with standard options\nInfriaApp.configure("${projectId}");`
                              } 
@@ -190,74 +193,126 @@ const app = initializeApp({
 
       {/* SDK Integration Guide */}
       <div className="flex flex-col gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-text-primary">Flutter SDK — Quick Setup</h2>
-          <p className="text-xs text-text-secondary leading-relaxed mt-0.5">
-            Step-by-step for connecting your Flutter app. Full guide: <code className="font-mono text-accent text-[11px]">INFRIA-Flutter-SDK-Integration-Guide.md</code>
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-text-primary">Flutter SDK Setup</h2>
+            <p className="text-xs text-text-secondary leading-relaxed mt-0.5">
+              Connect your Flutter project using the INFRIA CLI or manual pub package.
+            </p>
+          </div>
+          <div className="inline-flex p-0.5 bg-bg-elevated border border-border-default rounded-lg self-start sm:self-auto">
+            <button
+              onClick={() => setSetupMethod("cli")}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                setupMethod === "cli"
+                  ? "bg-accent text-white font-semibold shadow-sm"
+                  : "text-text-muted hover:text-text-primary"
+              }`}
+            >
+              <Terminal className="w-3.5 h-3.5" />
+              CLI (Recommended)
+            </button>
+            <button
+              onClick={() => setSetupMethod("pub")}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                setupMethod === "pub"
+                  ? "bg-accent text-white font-semibold shadow-sm"
+                  : "text-text-muted hover:text-text-primary"
+              }`}
+            >
+              flutter pub add
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Step 1 */}
-          <div className="bg-bg-surface border border-border-default rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-6 h-6 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-bold flex items-center justify-center">1</span>
-              <span className="text-sm font-bold text-text-primary">Get credentials</span>
+        {setupMethod === "cli" ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* CLI Step 1 */}
+            <div className="bg-bg-surface border border-border-default rounded-xl p-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-5 h-5 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-semibold flex items-center justify-center">1</span>
+                  <span className="text-xs font-semibold text-text-primary uppercase tracking-wider">Install CLI</span>
+                </div>
+                <p className="text-xs text-text-muted mb-2">Activate the global Dart CLI tool:</p>
+              </div>
+              <pre className="text-[11px] font-mono text-text-secondary bg-bg-elevated rounded-lg p-2.5 overflow-x-auto border border-border-subtle">{`dart pub global activate infria_cli`}</pre>
             </div>
-            <div className="space-y-2 text-xs text-text-muted">
-              <p>From this page, copy:</p>
-              <ul className="space-y-1">
-                <li className="flex gap-1.5"><span className="text-accent">→</span><span><strong className="text-text-secondary">projectId</strong> (see Project Overview)</span></li>
-                <li className="flex gap-1.5"><span className="text-accent">→</span><span><strong className="text-text-secondary">apiKey</strong> (generate below)</span></li>
-                <li className="flex gap-1.5"><span className="text-accent">→</span><span><strong className="text-text-secondary">baseUrl</strong> (from your n8n deployment)</span></li>
-              </ul>
+
+            {/* CLI Step 2 */}
+            <div className="bg-bg-surface border border-border-default rounded-xl p-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-5 h-5 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-semibold flex items-center justify-center">2</span>
+                  <span className="text-xs font-semibold text-text-primary uppercase tracking-wider">Login & Init</span>
+                </div>
+                <p className="text-xs text-text-muted mb-2">Authenticate and link your project:</p>
+              </div>
+              <pre className="text-[11px] font-mono text-text-secondary bg-bg-elevated rounded-lg p-2.5 overflow-x-auto border border-border-subtle">{`infria login
+infria init --project=${projectId}`}</pre>
+            </div>
+
+            {/* CLI Step 3 */}
+            <div className="bg-bg-surface border border-border-default rounded-xl p-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-5 h-5 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-semibold flex items-center justify-center">3</span>
+                  <span className="text-xs font-semibold text-text-primary uppercase tracking-wider">Send Prompt</span>
+                </div>
+                <p className="text-xs text-text-muted mb-2">Send prompt from any Flutter widget:</p>
+              </div>
+              <pre className="text-[11px] font-mono text-text-secondary bg-bg-elevated rounded-lg p-2.5 overflow-x-auto border border-border-subtle">{`final res = await InfriaChat.instance.send(
+  message: userInput,
+);
+print(res.content);`}</pre>
             </div>
           </div>
-
-          {/* Step 2 */}
-          <div className="bg-bg-surface border border-border-default rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-6 h-6 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-bold flex items-center justify-center">2</span>
-              <span className="text-sm font-bold text-text-primary">initializeApp()</span>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Pub Step 1 */}
+            <div className="bg-bg-surface border border-border-default rounded-xl p-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-5 h-5 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-semibold flex items-center justify-center">1</span>
+                  <span className="text-xs font-semibold text-text-primary uppercase tracking-wider">Add Package</span>
+                </div>
+                <p className="text-xs text-text-muted mb-2">Run in your Flutter project terminal:</p>
+              </div>
+              <pre className="text-[11px] font-mono text-text-secondary bg-bg-elevated rounded-lg p-2.5 overflow-x-auto border border-border-subtle">{`flutter pub add infria_sdk`}</pre>
             </div>
-            <pre className="text-[10px] text-text-secondary leading-relaxed bg-bg-elevated rounded p-2 overflow-auto">{`await Infria.initializeApp(
+
+            {/* Pub Step 2 */}
+            <div className="bg-bg-surface border border-border-default rounded-xl p-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-5 h-5 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-semibold flex items-center justify-center">2</span>
+                  <span className="text-xs font-semibold text-text-primary uppercase tracking-wider">Initialize</span>
+                </div>
+                <p className="text-xs text-text-muted mb-2">Initialize in <code className="text-accent font-mono text-[11px]">main.dart</code>:</p>
+              </div>
+              <pre className="text-[11px] font-mono text-text-secondary bg-bg-elevated rounded-lg p-2.5 overflow-x-auto border border-border-subtle">{`await Infria.initializeApp(
   projectId: '${projectId}',
-  apiKey: 'infria_pk_...',
-  baseUrl: 'https://...',
+  apiKey: 'YOUR_API_KEY',
   appName: 'My App',
-  platform: InfriaPlatform.flutter,
 );`}</pre>
-          </div>
-
-          {/* Step 3 */}
-          <div className="bg-bg-surface border border-border-default rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-6 h-6 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-bold flex items-center justify-center">3</span>
-              <span className="text-sm font-bold text-text-primary">Send messages</span>
             </div>
-            <pre className="text-[10px] text-text-secondary leading-relaxed bg-bg-elevated rounded p-2 overflow-auto">{`final response = await
-  InfriaChat.instance.send(
-    message: 'Hello!',
-  );
-print(response.content);`}</pre>
-          </div>
-        </div>
 
-        {/* Registration note */}
-        <div className="bg-accent-muted border border-accent-border rounded-xl p-4 flex gap-3">
-          <span className="text-accent mt-0.5">💡</span>
-          <div className="text-xs text-text-secondary leading-relaxed">
-            <strong className="text-text-primary">How does Connected App registration work?</strong>
-            <br />
-            When the Flutter SDK calls <code className="font-mono text-accent">initializeApp()</code>, it automatically sends
-            a <code className="font-mono text-accent">POST /runtime/register-app</code> request to the backend.
-            The app then appears in <strong className="text-text-primary">Connected Apps</strong> above, and all
-            analytics events will show its <code className="font-mono text-accent">appName</code> — so you can track traffic per app.
-            <br className="my-1" />
-            Just having an API key is not enough — registration links the key to a named app, enabling
-            per-app monitoring and revocation.
+            {/* Pub Step 3 */}
+            <div className="bg-bg-surface border border-border-default rounded-xl p-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-5 h-5 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-semibold flex items-center justify-center">3</span>
+                  <span className="text-xs font-semibold text-text-primary uppercase tracking-wider">Send Message</span>
+                </div>
+                <p className="text-xs text-text-muted mb-2">Send prompts and receive AI responses:</p>
+              </div>
+              <pre className="text-[11px] font-mono text-text-secondary bg-bg-elevated rounded-lg p-2.5 overflow-x-auto border border-border-subtle">{`final res = await InfriaChat.instance.send(
+  message: userInput,
+);
+print(res.content);`}</pre>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="border-b border-border-subtle my-2" />

@@ -154,7 +154,16 @@ html, body {
 
 a, button { transition: all 0.15s ease; }
 
-/* ── Range / Slider inputs ──────────────────────────────────── */
+/* ── Select / option theming ────────────────────────────────── */
+select {
+  color-scheme: light dark;
+}
+
+select option {
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+}
+
 input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
