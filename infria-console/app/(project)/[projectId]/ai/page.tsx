@@ -179,7 +179,7 @@ export default function AiPage() {
                     <label className="block text-sm font-semibold text-text-secondary">Chunk Threshold</label>
                     <span className="text-xs bg-bg-elevated px-2 py-0.5 rounded border border-border-strong font-mono">{Math.round(config.retrievalThreshold * 100)}% Match</span>
                   </div>
-                  <input type="range" min="30" max="100" value={Math.round(config.retrievalThreshold * 100)} onChange={e => update("retrievalThreshold", parseInt(e.target.value) / 100)} className="w-full accent-accent cursor-pointer" />
+                  <input type="range" min="30" max="100" value={Math.round(config.retrievalThreshold * 100)} onChange={e => update("retrievalThreshold", parseInt(e.target.value) / 100)} className="w-full cursor-pointer" />
                   <p className="text-[11px] text-text-muted mt-2">Only retrieve knowledge chunks that match the query intent at or above this percentage.</p>
                 </div>
                 <div>
@@ -187,7 +187,7 @@ export default function AiPage() {
                     <label className="block text-sm font-semibold text-text-secondary">Top-K Injection</label>
                     <span className="text-xs bg-bg-elevated px-2 py-0.5 rounded border border-border-strong font-mono">{config.retrievalTopK} Chunks</span>
                   </div>
-                  <input type="range" min="1" max="10" value={config.retrievalTopK} onChange={e => update("retrievalTopK", parseInt(e.target.value))} className="w-full accent-accent cursor-pointer" />
+                  <input type="range" min="1" max="10" value={config.retrievalTopK} onChange={e => update("retrievalTopK", parseInt(e.target.value))} className="w-full cursor-pointer" />
                   <p className="text-[11px] text-text-muted mt-2">Maximum number of text chunks injected into the prompt context per request.</p>
                 </div>
               </div>
@@ -216,7 +216,6 @@ export default function AiPage() {
           </div>
           
           <div className="space-y-4 relative px-2">
-             <div className="absolute left-[26px] -translate-x-1/2 top-6 bottom-10 w-0.5 bg-border-strong z-0"></div>
 
              {[
                { id: 1, name: "System Config", val: `"${config.systemInstructions.slice(0, 30)}..." + Tone: ${config.tone} + Lang: ${config.language}`, color: "accent", state: true },
@@ -225,9 +224,16 @@ export default function AiPage() {
                { id: 4, name: "RAG Injection", val: config.knowledgeEnabled ? `Top ${config.retrievalTopK} chunks (≥${Math.round(config.retrievalThreshold * 100)}%) pulled query dynamically` : "Disabled", color: config.knowledgeEnabled ? "status-warning" : "text-muted", state: config.knowledgeEnabled },
              ].map(step => (
                 <div key={step.id} className={`relative flex gap-4 z-10 ${step.state ? 'opacity-100' : 'opacity-40 grayscale'} ${step.dim ? 'opacity-70' : ''}`}>
-                  <div className={`w-9 h-9 rounded-full bg-${step.color}/10 border border-${step.color}/30 text-${step.color} flex items-center justify-center font-bold text-sm shrink-0 shadow-sm relative`}>
+                  <div
+                     className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0 shadow-sm relative"
+                     style={{
+                       backgroundColor: step.state ? 'color-mix(in srgb, var(--color-accent) 12%, transparent)' : 'var(--color-bg-elevated)',
+                       borderColor: step.state ? 'color-mix(in srgb, var(--color-accent) 30%, transparent)' : 'var(--color-border-strong)',
+                       color: step.state ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                       border: '1px solid',
+                     }}
+                   >
                      {step.id}
-                     <div className="absolute -inset-1 rounded-full border border-current opacity-10"></div>
                   </div>
                   <div className={`flex-1 bg-bg-elevated border border-border-default rounded-lg p-3 ${!step.state && 'bg-bg-base border-dashed'}`}>
                      <h4 className={`text-[11px] font-bold uppercase tracking-wider mb-0.5 ${step.state ? 'text-text-primary' : 'text-text-muted'}`}>{step.name}</h4>

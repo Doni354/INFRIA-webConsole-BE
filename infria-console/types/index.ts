@@ -158,15 +158,31 @@ export interface AnalyticsMetrics {
   avgLatencyMs: number;
 }
 
+/** Where the execution originated from */
+export type ExecutionSource = "DASHBOARD" | "SIMULATOR" | "SDK";
+
+/** Which AI path was taken */
+export type ExecutionRoute = "RAG" | "FUNCTION" | "DIRECT";
+
+/** Final execution result */
+export type ExecutionStatus = "SUCCESS" | "ERROR" | "FALLBACK";
+
 export interface ActivityEntry {
   id: string;
+  requestId?: string;
   projectId: string;
   timestamp: string;
-  type: "chat" | "function_call";
-  endpoint?: string;
-  functionName?: string;
-  status: "success" | "error";
+  source: ExecutionSource;
+  route: ExecutionRoute;
+  status: ExecutionStatus;
   latencyMs: number;
+  functionName?: string;
+  retrievalSources?: number;
+  sessionId?: string;
+  appName?: string;
+  // Legacy fields kept for backwards compat
+  type?: "chat" | "function_call";
+  endpoint?: string;
 }
 
 // ==================
@@ -178,9 +194,39 @@ export interface PlaygroundMessage {
   content: string;
   timestamp: string;
   metadata?: {
-    route?: "RAG" | "DIRECT" | "FUNCTION";
+    route?: ExecutionRoute;
     latencyMs?: number;
     sources?: number;
+    requestId?: string;
     functionCall?: { name: string; args: Record<string, unknown> };
+  };
+}
+
+// ==================
+// Runtime Test (shared service)
+// ==================
+export interface RuntimeTestRequest {
+  projectId: string;
+  sessionId: string;
+  message: string;
+  source: ExecutionSource;
+  conversationHistory?: { role: "user" | "assistant"; content: string }[];
+}
+
+export interface RuntimeTestResponse {
+  type: "message" | "function_call";
+  requestId?: string;
+  data: {
+    content?: string;
+    function?: string;
+    args?: Record<string, unknown>;
+  };
+  __trace?: {
+    functionsInjected?: number;
+    ragFallback?: boolean;
+    ragChunksInjected?: number;
+    ragTopK?: number;
+    ragThreshold?: number;
+    chunksPreview?: string[];
   };
 }

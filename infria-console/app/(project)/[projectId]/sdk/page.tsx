@@ -128,7 +128,16 @@ export default function AppSettingsPage() {
          <div className="w-full">
             <div className="bg-bg-surface border border-border-default rounded-xl overflow-hidden shadow-sm">
                {registeredApps.length === 0 ? (
-                 <div className="p-8 text-center text-sm text-text-muted">No apps connected yet. Please register one in the Dashboard.</div>
+                 <div className="p-8 text-center space-y-3">
+                   <p className="text-sm text-text-muted">
+                     No apps connected yet.
+                   </p>
+                   <p className="text-xs text-text-muted leading-relaxed max-w-xs mx-auto">
+                     Apps register automatically when your Flutter SDK calls
+                     <code className="font-mono bg-bg-elevated text-accent px-1 py-0.5 rounded mx-1">Infria.initializeApp()</code>
+                     for the first time.
+                   </p>
+                 </div>
                ) : (
                  <div className="divide-y divide-border-subtle">
                    {registeredApps.map(app => (
@@ -177,6 +186,80 @@ const app = initializeApp({
          </div>
       </div>
       
+      <div className="border-b border-border-subtle my-2" />
+
+      {/* SDK Integration Guide */}
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-text-primary">Flutter SDK — Quick Setup</h2>
+          <p className="text-xs text-text-secondary leading-relaxed mt-0.5">
+            Step-by-step for connecting your Flutter app. Full guide: <code className="font-mono text-accent text-[11px]">INFRIA-Flutter-SDK-Integration-Guide.md</code>
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Step 1 */}
+          <div className="bg-bg-surface border border-border-default rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-6 h-6 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-bold flex items-center justify-center">1</span>
+              <span className="text-sm font-bold text-text-primary">Get credentials</span>
+            </div>
+            <div className="space-y-2 text-xs text-text-muted">
+              <p>From this page, copy:</p>
+              <ul className="space-y-1">
+                <li className="flex gap-1.5"><span className="text-accent">→</span><span><strong className="text-text-secondary">projectId</strong> (see Project Overview)</span></li>
+                <li className="flex gap-1.5"><span className="text-accent">→</span><span><strong className="text-text-secondary">apiKey</strong> (generate below)</span></li>
+                <li className="flex gap-1.5"><span className="text-accent">→</span><span><strong className="text-text-secondary">baseUrl</strong> (from your n8n deployment)</span></li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Step 2 */}
+          <div className="bg-bg-surface border border-border-default rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-6 h-6 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-bold flex items-center justify-center">2</span>
+              <span className="text-sm font-bold text-text-primary">initializeApp()</span>
+            </div>
+            <pre className="text-[10px] text-text-secondary leading-relaxed bg-bg-elevated rounded p-2 overflow-auto">{`await Infria.initializeApp(
+  projectId: '${projectId}',
+  apiKey: 'infria_pk_...',
+  baseUrl: 'https://...',
+  appName: 'My App',
+  platform: InfriaPlatform.flutter,
+);`}</pre>
+          </div>
+
+          {/* Step 3 */}
+          <div className="bg-bg-surface border border-border-default rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-6 h-6 rounded-full bg-accent/10 border border-accent-border text-accent text-xs font-bold flex items-center justify-center">3</span>
+              <span className="text-sm font-bold text-text-primary">Send messages</span>
+            </div>
+            <pre className="text-[10px] text-text-secondary leading-relaxed bg-bg-elevated rounded p-2 overflow-auto">{`final response = await
+  InfriaChat.instance.send(
+    message: 'Hello!',
+  );
+print(response.content);`}</pre>
+          </div>
+        </div>
+
+        {/* Registration note */}
+        <div className="bg-accent-muted border border-accent-border rounded-xl p-4 flex gap-3">
+          <span className="text-accent mt-0.5">💡</span>
+          <div className="text-xs text-text-secondary leading-relaxed">
+            <strong className="text-text-primary">How does Connected App registration work?</strong>
+            <br />
+            When the Flutter SDK calls <code className="font-mono text-accent">initializeApp()</code>, it automatically sends
+            a <code className="font-mono text-accent">POST /runtime/register-app</code> request to the backend.
+            The app then appears in <strong className="text-text-primary">Connected Apps</strong> above, and all
+            analytics events will show its <code className="font-mono text-accent">appName</code> — so you can track traffic per app.
+            <br className="my-1" />
+            Just having an API key is not enough — registration links the key to a named app, enabling
+            per-app monitoring and revocation.
+          </div>
+        </div>
+      </div>
+
       <div className="border-b border-border-subtle my-2" />
 
       {/* Secrets & API Keys API Section aligned to new standards */}

@@ -31,6 +31,22 @@ export function aiConfigDoc(uid: string, projectId: string): DocumentReference {
   return doc(db, "users", uid, "projects", projectId, "ai_config", "config");
 }
 
+export function analyticsEventsCol(uid: string, projectId: string): CollectionReference {
+  return collection(db, "users", uid, "projects", projectId, "analyticsEvents");
+}
+
+export function chatSessionsCol(uid: string, projectId: string): CollectionReference {
+  return collection(db, "users", uid, "projects", projectId, "chatSessions");
+}
+
+export function chatSessionDoc(uid: string, projectId: string, sessionId: string): DocumentReference {
+  return doc(db, "users", uid, "projects", projectId, "chatSessions", sessionId);
+}
+
+export function chatMessagesCol(uid: string, projectId: string, sessionId: string): CollectionReference {
+  return collection(db, "users", uid, "projects", projectId, "chatSessions", sessionId, "messages");
+}
+
 // ── Utilities ──────────────────────────────────────────────────
 
 export function now(): string {
