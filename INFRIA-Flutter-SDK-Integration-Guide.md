@@ -18,6 +18,18 @@ Dokumen ini menjelaskan cara mengintegrasikan INFRIA Flutter SDK ke dalam aplika
 
 ---
 
+> ## 👥 Dua Peran yang Berbeda
+>
+> Dokumen ini ditujukan kepada **dua pihak** yang berbeda tugasnya:
+>
+> | Peran | Tanggung jawab |
+> |-------|---------------|
+> | **SDK Developer** (teman yang buat paket `infria` di Dart/Flutter) | Hardcode URL backend n8n ke dalam SDK. Developer yang pakai SDK tidak boleh tahu URL ini. |
+> | **App Developer** (developer Flutter yang *pakai* SDK) | Hanya butuh `projectId` + `apiKey` dari Console. Tidak perlu tahu apa itu n8n atau URL-nya. |
+>
+> Sama persis dengan Firebase SDK: app developer tidak perlu tahu URL server Firebase, mereka cukup `initializeApp(options)`.
+
+
 ## Konsep Arsitektur
 
 ```
@@ -36,16 +48,19 @@ Flutter App
 
 ## 1. Yang Dibutuhkan dari INFRIA Console
 
-Sebelum bisa integrasi, developer Flutter harus meminta ke **owner project di Console**:
+Sebelum bisa integrasi, developer Flutter cukup minta dua hal ke **owner project di Console**:
 
 | Item | Cara Dapatkan | Contoh |
 |------|--------------|--------|
 | `projectId` | Project Overview → Project ID | `my-store-app-7f42` |
 | `apiKey` | SDK & API Keys → Generate Key | `infria_pk_xxxxxxxxxxxxxxxxxxxx` |
-| `baseUrl` | Dari tim backend/n8n | `https://n8n.infria.io` |
 
 > ⚠️ **JANGAN simpan `apiKey` di dalam source code yang dipush ke GitHub.**  
 > Gunakan `.env` file atau Flutter flavor environment variables.
+
+> 💡 **`baseUrl` tidak perlu disediakan oleh developer yang pakai SDK.**  
+> URL backend INFRIA sudah di-hardcode di dalam paket SDK oleh tim SDK developer (teman kamu yang bikin SDK-nya).  
+> Sama seperti Firebase SDK — kamu ga perlu tahu URL server Firebase, tinggal pakai.
 
 ---
 
@@ -62,7 +77,9 @@ dependencies:
   #     url: https://github.com/infria/flutter-sdk.git
 ```
 
-### Environment Config
+### Environment Config (untuk App Developer)
+
+Hanya dua variabel yang perlu dikonfigurasi app developer:
 
 ```dart
 // lib/config/env.dart
@@ -75,10 +92,8 @@ class Env {
     'INFRIA_API_KEY',
     defaultValue: 'infria_pk_...',
   );
-  static const String baseUrl = String.fromEnvironment(
-    'INFRIA_BASE_URL',
-    defaultValue: 'https://n8n.infria.io',
-  );
+  // Tidak ada baseUrl di sini.
+  // URL backend sudah di-hardcode di dalam SDK oleh tim SDK developer.
 }
 ```
 
@@ -86,11 +101,35 @@ Jalankan dengan:
 ```bash
 flutter run \
   --dart-define=INFRIA_PROJECT_ID=my-store-7f42 \
-  --dart-define=INFRIA_API_KEY=infria_pk_xxx \
-  --dart-define=INFRIA_BASE_URL=https://n8n.infria.io
+  --dart-define=INFRIA_API_KEY=infria_pk_xxx
 ```
 
 ---
+
+> ### 🛠️ Catatan untuk SDK Developer (bukan app developer)
+>
+> Kamu yang buat paket `infria` harus hardcode URL backend n8n di dalam SDK, bukan expose ke pengguna SDK.
+>
+> ```dart
+> // Di dalam source code SDK (infria/lib/src/config.dart)
+> // Ini TIDAK terekspos ke pubspec atau environment app developer
+> class InfriaConfig {
+>   // Hardcode sesuai deployment n8n kamu
+>   static const String _baseUrl = 'https://n8n.infria.io';
+>
+>   // Atau: bisa support multi-environment via SDK build flag
+>   // static const String _baseUrl = String.fromEnvironment(
+>   //   'INFRIA_INTERNAL_BASE_URL',
+>   //   defaultValue: 'https://n8n.infria.io',
+>   // );
+>
+>   static String get baseUrl => _baseUrl;
+> }
+> ```
+>
+> App developer yang pakai SDK sama sekali tidak boleh tahu nilai `_baseUrl` ini.
+> Jika URL berubah, cukup update SDK dan publish versi baru — app developer tinggal upgrade versi paketnya.
+
 
 ## 3. App Registration (PENTING)
 
@@ -129,18 +168,18 @@ void main() async {
   final packageInfo = await PackageInfo.fromPlatform();
   
   // Initialize INFRIA SDK + Register App
+  // projectId + apiKey dari Console. baseUrl sudah baked-in di SDK.
   await Infria.initializeApp(
     projectId: Env.projectId,
     apiKey: Env.apiKey,
-    baseUrl: Env.baseUrl,
-    
+
     // App Registration fields — harus diisi agar muncul di Connected Apps console
-    appName: 'Toko Kita App',        // nama yang muncul di console
+    appName: 'Toko Kita App',           // nama yang muncul di console
     platform: InfriaPlatform.flutter,
-    packageId: packageInfo.packageName,  // com.tokokita.app
-    appVersion: packageInfo.version,     // 1.0.0
+    packageId: packageInfo.packageName, // com.tokokita.app
+    appVersion: packageInfo.version,    // 1.0.0
   );
-  
+
   runApp(const MyApp());
 }
 ```
@@ -515,3 +554,4 @@ class _InfriaChatWidgetState extends State<InfriaChatWidget> {
 ---
 
 *Pertanyaan atau klarifikasi: hubungi tim console INFRIA.*
+
