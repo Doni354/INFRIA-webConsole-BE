@@ -30,10 +30,12 @@ app.get('/health', (req, res) => {
 const runtimeRoutes = require('../modules/runtime/runtime.routes');
 const knowledgeRoutes = require('../modules/knowledge/knowledge.routes');
 const apiKeyRoutes = require('../modules/api-keys/api-key.routes');
+const functionRoutes = require('../modules/functions/function.routes');
 
 app.use('/v1/runtime', runtimeRoutes);
 app.use('/v1/knowledge', knowledgeRoutes);
 app.use('/v1/api-keys', apiKeyRoutes);
+app.use('/v1/functions', functionRoutes);
 
 // Error handling middleware
 app.use(errorHandler);

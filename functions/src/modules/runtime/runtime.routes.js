@@ -24,4 +24,15 @@ router.post('/console-simulator', verifyConsoleAuth, (req, res, next) => {
   handleChat(req, res, next);
 });
 
+router.post('/console-function-result', verifyConsoleAuth, (req, res, next) => {
+  // Inject mock tenant context for console simulator function callback testing
+  req.tenant = {
+    uid: req.user.uid,
+    workspaceId: req.user.uid,
+    projectId: req.body.projectId,
+    apiKeyId: 'simulator_mode'
+  };
+  handleFunctionResult(req, res, next);
+});
+
 module.exports = router;

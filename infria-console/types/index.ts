@@ -178,6 +178,10 @@ export interface ActivityEntry {
   latencyMs: number;
   functionName?: string;
   retrievalSources?: number;
+  evidenceLevel?: "HIGH" | "MEDIUM" | "LOW" | "NONE";
+  evidenceReason?: string;
+  isKnowledgeGap?: boolean;
+  topicCategory?: string;
   sessionId?: string;
   appName?: string;
   // Legacy fields kept for backwards compat
@@ -198,6 +202,9 @@ export interface PlaygroundMessage {
     latencyMs?: number;
     sources?: number;
     requestId?: string;
+    evidenceLevel?: "HIGH" | "MEDIUM" | "LOW" | "NONE" | string;
+    evidenceReason?: string;
+    topicCategory?: string;
     functionCall?: { name: string; args: Record<string, unknown> };
   };
 }
@@ -216,17 +223,86 @@ export interface RuntimeTestRequest {
 export interface RuntimeTestResponse {
   type: "message" | "function_call";
   requestId?: string;
+  sessionTitle?: string;
+  evaluation?: {
+    evidenceLevel?: "HIGH" | "MEDIUM" | "LOW" | "NONE";
+    evidenceReason?: string;
+    isKnowledgeGap?: boolean;
+    topicCategory?: string;
+  };
   data: {
     content?: string;
     function?: string;
-    args?: Record<string, unknown>;
+    arguments?: Record<string, unknown>;
+    args?: Record<string, unknown>; // backward compat
+    functionCallId?: string;
+    sessionTitle?: string;
+    metadata?: {
+      evidenceLevel?: "HIGH" | "MEDIUM" | "LOW" | "NONE";
+      evidenceReason?: string;
+      isKnowledgeGap?: boolean;
+      topicCategory?: string;
+    };
   };
   __trace?: {
+    functionsLoaded?: number;
     functionsInjected?: number;
     ragFallback?: boolean;
     ragChunksInjected?: number;
     ragTopK?: number;
     ragThreshold?: number;
     chunksPreview?: string[];
+    evidenceLevel?: "HIGH" | "MEDIUM" | "LOW" | "NONE";
+    evidenceReason?: string;
+    isKnowledgeGap?: boolean;
+    topicCategory?: string;
+    sessionTitle?: string;
+  };
+}
+
+export interface FunctionResultRequest {
+  projectId: string;
+  requestId: string;
+  functionCallId: string;
+  function: {
+    name: string;
+    arguments?: Record<string, unknown>;
+  };
+  result: unknown;
+}
+
+export interface StandaloneFunctionTestRequest {
+  projectId: string;
+  functionName: string;
+  arguments?: Record<string, unknown>;
+  sessionId?: string;
+  autoMockResult?: boolean;
+}
+
+export interface StandaloneFunctionTestResponse {
+  success: boolean;
+  requestId: string;
+  sessionId: string;
+  type: "function_call";
+  data: {
+    functionCallId: string;
+    function: string;
+    arguments: Record<string, unknown>;
+  };
+  sdkDispatchPayload: {
+    action: string;
+    capabilityName: string;
+    parameters: Record<string, unknown>;
+    correlation: {
+      requestId: string;
+      functionCallId: string;
+    };
+  };
+  mockSdkResult?: Record<string, unknown> | null;
+  registeredFunctionMeta: {
+    id: string;
+    name: string;
+    description: string;
+    status: string;
   };
 }

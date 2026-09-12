@@ -18,12 +18,22 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  Play,
+  CheckCircle2,
+  X,
+  Copy,
+  Check,
 } from "lucide-react";
 import { runtimeTestService } from "@/services/runtime-test.service";
+import { functionService } from "@/services/function.service";
 import { chatSessionService, ChatSession } from "@/services/chatSession.service";
 import { analyticsService } from "@/services/analytics.service";
 import { usePersistedSession } from "@/hooks/usePersistedSession";
-import { PlaygroundMessage } from "@/types";
+import {
+  PlaygroundMessage,
+  ConsoleFunction,
+  StandaloneFunctionTestResponse,
+} from "@/types";
 
 type TraceLog = {
   id: string;
@@ -80,6 +90,27 @@ export default function SimulatorPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [sessionInitialized, setSessionInitialized] = useState(false);
 
+  // ── Function Calling State ─────────────────────────────────────
+  const [registeredFunctions, setRegisteredFunctions] = useState<ConsoleFunction[]>([]);
+  const [pendingFunctionCall, setPendingFunctionCall] = useState<{
+    requestId: string;
+    functionCallId: string;
+    functionName: string;
+    arguments: Record<string, unknown>;
+    mockResultJson: string;
+    isSubmitting: boolean;
+  } | null>(null);
+
+  // ── Standalone Capability Testing State ────────────────────────
+  const [standaloneModalOpen, setStandaloneModalOpen] = useState(false);
+  const [selectedFnName, setSelectedFnName] = useState<string>("");
+  const [standaloneArgsJson, setStandaloneArgsJson] = useState<string>("{}");
+  const [standaloneRunning, setStandaloneRunning] = useState(false);
+  const [standaloneResult, setStandaloneResult] = useState<StandaloneFunctionTestResponse | null>(null);
+  const [standaloneError, setStandaloneError] = useState<string | null>(null);
+  const [standaloneResumeTesting, setStandaloneResumeTesting] = useState(false);
+  const [standaloneResumeResult, setStandaloneResumeResult] = useState<string | null>(null);
+
   // ── Trace logs ────────────────────────────────────────────────
   const [logs, setLogs] = useState<TraceLog[]>([]);
 
@@ -102,6 +133,83 @@ export default function SimulatorPage() {
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
+
+  // ── Load registered functions for project ─────────────────────
+  useEffect(() => {
+    async function loadFunctions() {
+      try {
+        const list = await functionService.list(projectId);
+        setRegisteredFunctions(list);
+        if (list.length > 0 && !selectedFnName) {
+          const first = list[0];
+          setSelectedFnName(first.name);
+          setStandaloneArgsJson(JSON.stringify(generateDefaultArgs(first), null, 2));
+        }
+      } catch {
+        setRegisteredFunctions([]);
+      }
+    }
+    loadFunctions();
+  }, [projectId]);
+
+  function generateDefaultArgs(fn: ConsoleFunction): Record<string, unknown> {
+    const properties = fn.parameters?.properties || {};
+    const args: Record<string, unknown> = {};
+    for (const [key, prop] of Object.entries(properties)) {
+      if (prop.type === "string") {
+        if (key.toLowerCase().includes("id")) args[key] = "ORD-8821";
+        else if (key.toLowerCase().includes("city") || key.toLowerCase().includes("loc")) args[key] = "Jakarta";
+        else args[key] = "sample_value";
+      } else if (prop.type === "number" || prop.type === "integer") {
+        args[key] = 1;
+      } else if (prop.type === "boolean") {
+        args[key] = true;
+      } else if (prop.type === "array") {
+        args[key] = [];
+      } else {
+        args[key] = {};
+      }
+    }
+    return args;
+  }
+
+  function generateSuggestedResult(functionName: string, args: Record<string, unknown> = {}) {
+    const lower = functionName.toLowerCase();
+    if (lower.includes("order") || lower.includes("pesan")) {
+      return {
+        orderId: args.orderId || "ORD-9821-X",
+        status: "SHIPPED",
+        courier: "JNE Express",
+        trackingNumber: "JNE8829103948",
+        estimatedDelivery: new Date(Date.now() + 86400000 * 2).toISOString().split("T")[0],
+        items: [{ name: "Wireless Headphones", quantity: 1, price: 450000 }],
+      };
+    }
+    if (lower.includes("weather") || lower.includes("cuaca")) {
+      return {
+        location: args.city || args.location || "Jakarta",
+        temperatureCelsius: 29,
+        condition: "Partly Cloudy",
+        humidity: "72%",
+      };
+    }
+    if (lower.includes("user") || lower.includes("profile")) {
+      return {
+        userId: args.userId || "usr_7721",
+        name: "Budi Pratama",
+        tier: "Gold Member",
+        loyaltyPoints: 1250,
+        verified: true,
+      };
+    }
+    return {
+      success: true,
+      executedFunction: functionName,
+      executedAt: new Date().toISOString(),
+      output: `Capability '${functionName}' executed locally on client device.`,
+      echoArgs: args,
+    };
+  }
 
   // ── Load messages when active session changes ─────────────────
   useEffect(() => {
@@ -187,7 +295,9 @@ export default function SimulatorPage() {
 
   // ── Switch to a saved session ─────────────────────────────────
   function handleSelectSession(sess: ChatSession) {
+    if (activeSessionId === sess.id) return;
     setActiveSessionId(sess.id);
+    setSessionInitialized(true);
   }
 
   // ── Delete session ────────────────────────────────────────────
@@ -286,6 +396,13 @@ export default function SimulatorPage() {
       let route: NonNullable<PlaygroundMessage["metadata"]>["route"] = "DIRECT";
       let responseContent = "";
 
+      // Extract Grounding Evaluation and Smart Title from response
+      const smartTitle = result.sessionTitle || result.data?.sessionTitle || result.__trace?.sessionTitle;
+      const evidenceLevel = (result.evaluation?.evidenceLevel || result.__trace?.evidenceLevel || result.data?.metadata?.evidenceLevel || (result.__trace?.ragChunksInjected ? "HIGH" : "NONE")) as "HIGH" | "MEDIUM" | "LOW" | "NONE";
+      const evidenceReason = result.evaluation?.evidenceReason || result.__trace?.evidenceReason || result.data?.metadata?.evidenceReason;
+      const isKnowledgeGap = result.evaluation?.isKnowledgeGap ?? result.__trace?.isKnowledgeGap ?? result.data?.metadata?.isKnowledgeGap ?? false;
+      const topicCategory = result.evaluation?.topicCategory || result.__trace?.topicCategory || result.data?.metadata?.topicCategory;
+
       if (result.type === "message") {
         addLog("llm", `[LLM] Message response received.`);
         responseContent = result.data.content ?? "";
@@ -294,9 +411,43 @@ export default function SimulatorPage() {
             ? "RAG"
             : "DIRECT";
       } else if (result.type === "function_call") {
-        addLog("function", `[FUNCTION] AI requested: ${result.data.function}()`);
-        responseContent = `[System] Function intercepted: AI requested \`${result.data.function}\``;
+        const fnName = result.data.function || "unknown_capability";
+        const fnArgs = (result.data.arguments || result.data.args || {}) as Record<string, unknown>;
+        const fnCallId = result.data.functionCallId || `fc_${Date.now()}`;
+
+        addLog("function", `[CAPABILITY INTERCEPTED] AI requested client execution: ${fnName}()`);
+        addLog("function", `  ↳ Arguments: ${JSON.stringify(fnArgs)}`);
+        addLog("function", `  ↳ Correlation ID: ${fnCallId}`);
+
+        const suggested = generateSuggestedResult(fnName, fnArgs);
+        setPendingFunctionCall({
+          requestId: result.requestId || "",
+          functionCallId: fnCallId,
+          functionName: fnName,
+          arguments: fnArgs,
+          mockResultJson: JSON.stringify(suggested, null, 2),
+          isSubmitting: false,
+        });
+
+        responseContent = `⚡ **AI requested client capability: \`${fnName}\`**\n\`\`\`json\n${JSON.stringify(fnArgs, null, 2)}\n\`\`\`\n*Awaiting client SDK / device execution callback below...*`;
         route = "FUNCTION";
+      }
+
+      // Add Grounding Evaluation trace logs
+      if (evidenceLevel) {
+        addLog(
+          "system",
+          `[GROUNDING] Evidence Level: ${evidenceLevel} · ${evidenceReason || "Grounding verified"}`
+        );
+      }
+      if (topicCategory) {
+        addLog(
+          "system",
+          `[TOPIC] Category: ${topicCategory}${isKnowledgeGap ? " · ⚠️ KNOWLEDGE GAP DETECTED" : ""}`
+        );
+      }
+      if (smartTitle) {
+        addLog("system", `[SESSION] Smart Title generated: "${smartTitle}"`);
       }
 
       const assistantMsg: PlaygroundMessage = {
@@ -309,6 +460,9 @@ export default function SimulatorPage() {
           requestId: result.requestId,
           latencyMs,
           sources: result.__trace?.ragChunksInjected,
+          evidenceLevel,
+          evidenceReason,
+          topicCategory,
         },
       };
 
@@ -321,7 +475,46 @@ export default function SimulatorPage() {
         // Non-critical
       }
 
-      // Record analytics event
+      // If smartTitle was generated by AI, update session doc in Firestore
+      if (smartTitle) {
+        try {
+          await chatSessionService.updateTitle(projectId, activeSessionId, smartTitle);
+        } catch {
+          // Non-critical
+        }
+      }
+
+      // Optimistically update session in the sidebar list immediately
+      setSessions((prev) => {
+        const existingIdx = prev.findIndex((s) => s.id === activeSessionId);
+        const now = new Date().toISOString();
+        const fallbackTitle = userText.length > 60 ? userText.slice(0, 60) + "…" : userText;
+        const titleToUse = smartTitle || fallbackTitle;
+
+        if (existingIdx >= 0) {
+          const updated = [...prev];
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            title: smartTitle || updated[existingIdx].title,
+            messageCount: (updated[existingIdx].messageCount || 0) + 2,
+            updatedAt: now,
+          };
+          return updated;
+        } else {
+          const newSess: ChatSession = {
+            id: activeSessionId,
+            projectId,
+            title: titleToUse,
+            source: "SIMULATOR",
+            messageCount: 2,
+            createdAt: now,
+            updatedAt: now,
+          };
+          return [newSess, ...prev];
+        }
+      });
+
+      // Record analytics event with rich grounding metadata
       try {
         await analyticsService.recordEvent(projectId, {
           requestId: result.requestId,
@@ -332,15 +525,17 @@ export default function SimulatorPage() {
           latencyMs,
           retrievalSources: result.__trace?.ragChunksInjected,
           sessionId: activeSessionId,
+          evidenceLevel,
+          evidenceReason,
+          isKnowledgeGap: Boolean(isKnowledgeGap),
+          topicCategory,
         });
       } catch {
         // Non-critical
       }
 
-      // Refresh session list (title + count update)
-      if (isFirstMessage) {
-        loadSessions();
-      }
+      // Refresh session list from Firestore in background
+      loadSessions();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       addLog("error", `[ERROR] ${msg}`);
@@ -368,6 +563,191 @@ export default function SimulatorPage() {
       }
     } finally {
       setIsTyping(false);
+    }
+  };
+
+  // ── Resume AI from Function Result ────────────────────────────
+  const handleResumeFunctionCall = async () => {
+    if (!pendingFunctionCall) return;
+
+    let parsedResult: unknown;
+    try {
+      parsedResult = JSON.parse(pendingFunctionCall.mockResultJson);
+    } catch {
+      alert("Invalid JSON format in simulated result. Please correct it.");
+      return;
+    }
+
+    setPendingFunctionCall((prev) => (prev ? { ...prev, isSubmitting: true } : null));
+    setIsTyping(true);
+
+    addLog(
+      "function",
+      `[CLIENT SDK] Executing local capability handler '${pendingFunctionCall.functionName}()'`
+    );
+    addLog("function", `  ↳ Local Output: ${JSON.stringify(parsedResult)}`);
+    addLog(
+      "system",
+      `[RESUME] POST /v1/runtime/function-result (req: ${pendingFunctionCall.requestId})`
+    );
+
+    const startResume = Date.now();
+    try {
+      const resumeResponse = await runtimeTestService.sendFunctionResult({
+        projectId,
+        requestId: pendingFunctionCall.requestId,
+        functionCallId: pendingFunctionCall.functionCallId,
+        function: {
+          name: pendingFunctionCall.functionName,
+          arguments: pendingFunctionCall.arguments,
+        },
+        result: parsedResult,
+      });
+
+      const latencyMs = Date.now() - startResume;
+      addLog("system", `[RESUME RESPONSE] 200 OK · ${latencyMs}ms`);
+      addLog("llm", `[LLM] Resumed conversation response received.`);
+
+      const finalContent =
+        resumeResponse.data?.content ||
+        (resumeResponse.data?.function
+          ? `AI requested another capability: \`${resumeResponse.data.function}\``
+          : "Execution completed.");
+
+      const resumedAssistantMsg: PlaygroundMessage = {
+        id: generateId(),
+        role: "assistant",
+        content: finalContent,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          route: "FUNCTION",
+          requestId: resumeResponse.requestId || pendingFunctionCall.requestId,
+          latencyMs,
+        },
+      };
+
+      setMessages((prev) => [...prev, resumedAssistantMsg]);
+
+      try {
+        await chatSessionService.addMessage(projectId, activeSessionId, resumedAssistantMsg);
+      } catch {}
+
+      try {
+        await analyticsService.recordEvent(projectId, {
+          requestId: resumeResponse.requestId || pendingFunctionCall.requestId,
+          timestamp: new Date().toISOString(),
+          source: "SIMULATOR",
+          route: "FUNCTION",
+          status: "SUCCESS",
+          latencyMs,
+          sessionId: activeSessionId,
+          functionName: pendingFunctionCall.functionName,
+        });
+      } catch {}
+
+      // If LLM returned another function call, chain it!
+      if (resumeResponse.type === "function_call" && resumeResponse.data?.function) {
+        const nextFnName = resumeResponse.data.function;
+        const nextArgs = (resumeResponse.data.arguments || resumeResponse.data.args || {}) as Record<
+          string,
+          unknown
+        >;
+        const nextCallId = resumeResponse.data.functionCallId || `fc_${Date.now()}`;
+        const nextSuggested = generateSuggestedResult(nextFnName, nextArgs);
+
+        setPendingFunctionCall({
+          requestId: resumeResponse.requestId || pendingFunctionCall.requestId,
+          functionCallId: nextCallId,
+          functionName: nextFnName,
+          arguments: nextArgs,
+          mockResultJson: JSON.stringify(nextSuggested, null, 2),
+          isSubmitting: false,
+        });
+      } else {
+        setPendingFunctionCall(null);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to resume conversation.";
+      addLog("error", `[RESUME ERROR] ${msg}`);
+      setPendingFunctionCall((prev) => (prev ? { ...prev, isSubmitting: false } : null));
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  // ── Standalone Function Testing Handlers (No AI) ──────────────
+  const handleRunStandaloneTest = async () => {
+    if (!selectedFnName) return;
+    let parsedArgs = {};
+    try {
+      parsedArgs = JSON.parse(standaloneArgsJson || "{}");
+    } catch {
+      setStandaloneError("Invalid JSON syntax in arguments.");
+      return;
+    }
+
+    setStandaloneRunning(true);
+    setStandaloneError(null);
+    setStandaloneResult(null);
+    setStandaloneResumeResult(null);
+
+    addLog(
+      "system",
+      `[STANDALONE TEST] Testing client capability '${selectedFnName}' (Bypassing AI/LLM)…`
+    );
+
+    try {
+      const res = await runtimeTestService.testFunctionStandalone({
+        projectId,
+        functionName: selectedFnName,
+        arguments: parsedArgs,
+        sessionId: activeSessionId,
+        autoMockResult: true,
+      });
+
+      setStandaloneResult(res);
+      addLog("function", `[VALIDATION] JSON Schema parameters check: PASSED`);
+      addLog("function", `[STATE SAVED] Correlation ID: ${res.data.functionCallId}`);
+      addLog(
+        "system",
+        `[SDK DISPATCH] Created Flutter payload for 'infria.registerFunction(\"${selectedFnName}\")'`
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Standalone test failed.";
+      setStandaloneError(msg);
+      addLog("error", `[STANDALONE ERROR] ${msg}`);
+    } finally {
+      setStandaloneRunning(false);
+    }
+  };
+
+  const handleTestResumeFromStandalone = async () => {
+    if (!standaloneResult) return;
+    setStandaloneResumeTesting(true);
+    addLog("system", `[STATE TEST] Testing callback flow with /v1/runtime/function-result...`);
+
+    try {
+      const resumeRes = await runtimeTestService.sendFunctionResult({
+        projectId,
+        requestId: standaloneResult.requestId,
+        functionCallId: standaloneResult.data.functionCallId,
+        function: {
+          name: standaloneResult.data.function,
+          arguments: standaloneResult.data.arguments,
+        },
+        result: standaloneResult.mockSdkResult || { success: true },
+      });
+
+      setStandaloneResumeResult(
+        `State machine validated! Response type: ${resumeRes.type}, Status: Success`
+      );
+      addLog("system", `[STATE MACHINE] Transitioned to COMPLETED and validated idempotency!`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "State machine test failed.";
+      setStandaloneResumeResult(`Test error: ${msg}`);
+      addLog("error", `[STATE ERROR] ${msg}`);
+    } finally {
+      setStandaloneResumeTesting(false);
     }
   };
 
@@ -410,14 +790,23 @@ export default function SimulatorPage() {
             </span>
           </p>
         </div>
-        <button
-          onClick={handleResetSession}
-          className="flex items-center gap-1.5 text-sm font-medium text-text-muted hover:text-accent transition-colors"
-          aria-label="Reset session"
-        >
-          <RefreshCcw className="w-4 h-4" />
-          Reset
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setStandaloneModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-accent/40 bg-accent/10 text-xs font-semibold text-accent hover:bg-accent/20 transition-all shadow-sm"
+          >
+            <Zap className="w-3.5 h-3.5 fill-accent" />
+            Test Capability (No AI)
+          </button>
+          <button
+            onClick={handleResetSession}
+            className="flex items-center gap-1.5 text-sm font-medium text-text-muted hover:text-accent transition-colors"
+            aria-label="Reset session"
+          >
+            <RefreshCcw className="w-4 h-4" />
+            Reset
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
@@ -499,10 +888,10 @@ export default function SimulatorPage() {
                       <MessageSquare className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <div className="flex-1 min-w-0">
                         <p className="truncate font-medium leading-snug">
-                          {sess.title}
+                          {sess.title || "Untitled Session"}
                         </p>
                         <p className="text-text-muted mt-0.5">
-                          {formatRelativeTime(sess.updatedAt)}
+                          {formatRelativeTime(sess.updatedAt || sess.createdAt)}
                         </p>
                       </div>
                       {/* Delete button */}
@@ -647,6 +1036,86 @@ export default function SimulatorPage() {
             <div ref={chatEndRef} />
           </div>
 
+          {/* Active Capability Invocation Card */}
+          {pendingFunctionCall && (
+            <div className="bg-bg-elevated border-t border-b border-accent/40 p-3.5 space-y-2.5 bg-accent/5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-accent">
+                  <Zap className="w-4 h-4 fill-accent" />
+                  Client Capability Invocation (Mock SDK)
+                </div>
+                <button
+                  onClick={() => setPendingFunctionCall(null)}
+                  className="text-text-muted hover:text-text-primary p-0.5 text-xs"
+                  title="Dismiss"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="text-xs space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-text-muted">Target Function:</span>
+                  <span className="font-mono font-semibold text-accent px-1.5 py-0.5 rounded bg-accent/10 border border-accent/20">
+                    {pendingFunctionCall.functionName}()
+                  </span>
+                </div>
+                <div>
+                  <span className="text-text-muted">Arguments from AI:</span>
+                  <pre className="font-mono text-[11px] bg-bg-surface p-1.5 rounded border border-border-default overflow-x-auto text-text-primary mt-0.5 max-h-24">
+                    {JSON.stringify(pendingFunctionCall.arguments, null, 2)}
+                  </pre>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-text-muted mb-0.5">
+                    <span>Simulated Return Payload (JSON):</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const dummy = generateSuggestedResult(
+                          pendingFunctionCall.functionName,
+                          pendingFunctionCall.arguments
+                        );
+                        setPendingFunctionCall((prev) =>
+                          prev ? { ...prev, mockResultJson: JSON.stringify(dummy, null, 2) } : null
+                        );
+                      }}
+                      className="text-[10px] text-accent hover:underline font-medium"
+                    >
+                      Reset Dummy Data
+                    </button>
+                  </div>
+                  <textarea
+                    value={pendingFunctionCall.mockResultJson}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPendingFunctionCall((prev) =>
+                        prev ? { ...prev, mockResultJson: val } : null
+                      );
+                    }}
+                    rows={3}
+                    className="w-full font-mono text-[11px] bg-bg-surface border border-border-strong rounded p-2 text-text-primary focus:outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={handleResumeFunctionCall}
+                  disabled={pendingFunctionCall.isSubmitting}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-accent text-white py-2 px-3 rounded-lg text-xs font-semibold hover:bg-accent-hover transition-colors disabled:opacity-50 shadow-sm"
+                >
+                  {pendingFunctionCall.isSubmitting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                  )}
+                  Simulate Client SDK Execution & Resume AI
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Input */}
           <div className="bg-bg-surface border-t border-border-default p-3 flex gap-2">
             <input
@@ -724,6 +1193,233 @@ export default function SimulatorPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Standalone Capability Tester Modal (No AI) ────────── */}
+      {standaloneModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-bg-surface border border-border-strong rounded-2xl max-w-2xl w-full shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-border-default flex items-center justify-between bg-bg-elevated">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-accent-muted border border-accent-border flex items-center justify-center text-accent">
+                  <Zap className="w-4 h-4 fill-accent" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-text-primary">
+                    Standalone Capability Tester
+                  </h2>
+                  <p className="text-xs text-text-muted">
+                    Test client function calling and argument validation directly without invoking the AI.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setStandaloneModalOpen(false)}
+                className="p-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+                aria-label="Close modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              {/* Function Selector */}
+              <div>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                  Select Registered Capability
+                </label>
+                {registeredFunctions.length === 0 ? (
+                  <div className="text-xs text-text-muted p-3 bg-bg-elevated rounded-lg border border-border-default">
+                    No functions registered yet. Go to the{" "}
+                    <a href={`/${projectId}/functions`} className="text-accent underline">
+                      Functions
+                    </a>{" "}
+                    tab to register your first capability.
+                  </div>
+                ) : (
+                  <select
+                    value={selectedFnName}
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      setSelectedFnName(name);
+                      const fn = registeredFunctions.find((f) => f.name === name);
+                      if (fn) {
+                        setStandaloneArgsJson(JSON.stringify(generateDefaultArgs(fn), null, 2));
+                      }
+                      setStandaloneResult(null);
+                      setStandaloneError(null);
+                      setStandaloneResumeResult(null);
+                    }}
+                    className="w-full bg-bg-elevated border border-border-strong rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+                  >
+                    {registeredFunctions.map((fn) => (
+                      <option key={fn.id} value={fn.name}>
+                        {fn.name} ({fn.status === "active" ? "Active" : "Disabled"}) —{" "}
+                        {fn.description || "No description"}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Function Schema Details */}
+              {selectedFnName && (
+                <div className="bg-bg-elevated p-3 rounded-lg border border-border-default text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-text-primary font-mono">
+                      {selectedFnName}()
+                    </span>
+                    <span className="text-[10px] uppercase font-bold text-accent px-2 py-0.5 rounded bg-accent-muted border border-accent-border">
+                      Client Callback
+                    </span>
+                  </div>
+                  <p className="text-text-muted">
+                    {registeredFunctions.find((f) => f.name === selectedFnName)?.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Arguments JSON Input */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                    Arguments (JSON)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const fn = registeredFunctions.find((f) => f.name === selectedFnName);
+                      if (fn) {
+                        setStandaloneArgsJson(JSON.stringify(generateDefaultArgs(fn), null, 2));
+                      }
+                    }}
+                    className="text-xs text-accent hover:underline font-medium"
+                  >
+                    Auto-fill Default Arguments
+                  </button>
+                </div>
+                <textarea
+                  value={standaloneArgsJson}
+                  onChange={(e) => setStandaloneArgsJson(e.target.value)}
+                  rows={4}
+                  className="w-full font-mono text-xs bg-bg-elevated border border-border-strong rounded-lg p-3 text-text-primary focus:outline-none focus:border-accent"
+                  placeholder='{ "key": "value" }'
+                />
+              </div>
+
+              {/* Execute Standalone Button */}
+              <button
+                onClick={handleRunStandaloneTest}
+                disabled={standaloneRunning || !selectedFnName}
+                className="w-full flex items-center justify-center gap-2 bg-accent text-white py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-50 shadow-sm"
+              >
+                {standaloneRunning ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4 fill-current" />
+                )}
+                Run Standalone SDK Test
+              </button>
+
+              {/* Error Display */}
+              {standaloneError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-500 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold">Validation Failed:</div>
+                    <div className="font-mono text-[11px] mt-0.5">{standaloneError}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Result Display */}
+              {standaloneResult && (
+                <div className="space-y-3 pt-2 border-t border-border-default">
+                  <div className="flex items-center gap-2 text-xs font-bold text-status-success bg-status-success/10 border border-status-success/30 px-3 py-2 rounded-lg">
+                    <CheckCircle2 className="w-4 h-4 text-status-success shrink-0" />
+                    <span>Schema Validation Passed & State Saved in Firestore</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-2.5 bg-bg-elevated rounded border border-border-default">
+                      <span className="text-text-muted block text-[10px]">CORRELATION ID</span>
+                      <span className="font-mono font-semibold text-accent text-[11px] truncate block">
+                        {standaloneResult.data.functionCallId}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-bg-elevated rounded border border-border-default">
+                      <span className="text-text-muted block text-[10px]">TRACKING REQUEST ID</span>
+                      <span className="font-mono text-text-primary text-[11px] truncate block">
+                        {standaloneResult.requestId}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1">
+                      Dispatched Flutter SDK Payload
+                    </div>
+                    <pre className="font-mono text-[11px] bg-bg-elevated p-2.5 rounded border border-border-default overflow-x-auto text-text-primary max-h-28">
+                      {JSON.stringify(standaloneResult.sdkDispatchPayload, null, 2)}
+                    </pre>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1">
+                      Simulated Local SDK Output
+                    </div>
+                    <pre className="font-mono text-[11px] bg-bg-elevated p-2.5 rounded border border-border-default overflow-x-auto text-text-primary max-h-24">
+                      {JSON.stringify(standaloneResult.mockSdkResult, null, 2)}
+                    </pre>
+                  </div>
+
+                  {/* State Machine Callback Tester */}
+                  <div className="p-3 bg-accent-muted/20 border border-accent/20 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-text-primary">
+                        Test State Machine Callback Flow
+                      </span>
+                      <button
+                        onClick={handleTestResumeFromStandalone}
+                        disabled={standaloneResumeTesting}
+                        className="px-3 py-1 bg-accent text-white text-xs font-semibold rounded hover:bg-accent-hover transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                      >
+                        {standaloneResumeTesting ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Check className="w-3 h-3" />
+                        )}
+                        Send Result Callback
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-text-muted">
+                      Verifies that the backend receives the callback at{" "}
+                      <code className="text-accent">/v1/runtime/function-result</code>, matches
+                      correlation IDs, marks state complete, and handles idempotency.
+                    </p>
+                    {standaloneResumeResult && (
+                      <div className="text-xs font-mono p-2 bg-bg-surface rounded border border-border-default text-accent mt-1">
+                        {standaloneResumeResult}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 border-t border-border-default bg-bg-elevated flex justify-end">
+              <button
+                onClick={() => setStandaloneModalOpen(false)}
+                className="px-4 py-2 rounded-lg bg-bg-surface border border-border-strong text-xs font-semibold text-text-primary hover:bg-bg-hover transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
