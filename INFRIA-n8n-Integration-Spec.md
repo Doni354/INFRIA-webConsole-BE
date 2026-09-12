@@ -1,322 +1,238 @@
-# INFRIA n8n Integration Spec
+# INFRIA n8n Integration Spec (v2.0 — Stateless Orchestrator)
 **Untuk: Tim n8n Workflow**  
-**Versi:** 1.0  
+**Versi:** 2.0 (Stateless AI Orchestrator)  
 **Tanggal:** 2025  
-**Dibuat oleh:** INFRIA Console Team
+**Source of Truth:** Backend INFRIA Console Team
 
 ---
 
-## Overview
+## 1. Arsitektur & Prinsip Utama
 
-Dokumen ini berisi spesifikasi teknis yang harus diimplementasikan di sisi **n8n workflow** agar fitur-fitur berikut berfungsi di INFRIA Console:
-
-1. Penyimpanan sesi chat ke **Firestore** (bukan n8n memory)
-2. Pencatatan **analytics events** ke Firestore setelah setiap request
-3. **Validasi App Registration** (Connected App) saat ada request dari Flutter SDK
-
----
-
-## Mengapa Harus Simpan ke Firestore, Bukan n8n Memory?
-
-> **PENTING**: Jangan simpan data sesi/chat ke memory node n8n (`Set`, `Static Data`, atau workflow context).
-
-| | n8n Memory | Firestore |
-|--|--|--|
-| **Persist setelah restart?** | ❌ Hilang | ✅ Permanent |
-| **Bisa diakses Console?** | ❌ Tidak | ✅ Real-time |
-| **Bisa diakses SDK?** | ❌ Tidak | ✅ Ya |
-| **Cross-webhook?** | ❌ Tidak | ✅ Ya |
-| **Scalable?** | ❌ Terbatas | ✅ Unlimited |
-| **Analytics/Monitoring?** | ❌ Tidak ada | ✅ Full queryable |
-
-n8n memory bersifat **ephemeral dan per-workflow-execution** — artinya setiap kali webhook dipanggil, memory sebelumnya tidak ada. Firestore adalah satu-satunya sumber kebenaran (source of truth) untuk INFRIA.
-
----
-
-## Firestore Project
-
-Gunakan Firestore project yang sama dengan INFRIA Console:
+> ⚠️ **PENTING: n8n TIDAK PERLU koneksi ke Firestore sama sekali.**  
+> n8n berfungsi murni sebagai **Stateless AI Orchestrator & Reasoning Engine**. Semua urusan database (baca/tulis sesi chat, simpan pesan, pencatatan analytics, validasi API key, dan registrasi app) **100% ditangani oleh Backend INFRIA (`functions/`)**.
 
 ```
-Firebase Project: [project yang sama dengan konsol]
-Firestore Database: (default)
-```
-
-Untuk menulis ke Firestore dari n8n, gunakan:
-- **HTTP Request node** → Firestore REST API, atau
-- **Google Cloud Firestore node** (jika tersedia di n8n instance kamu)
-
-Autentikasi ke Firestore: gunakan **Google Service Account** yang sudah punya role `Cloud Datastore User` pada Firebase project.
-
----
-
-## 1. Penyimpanan Sesi Chat
-
-### Kapan ditulis?
-Setiap kali n8n menerima request dari endpoint `/runtime/chat` atau `/runtime/console-simulator`.
-
-### Struktur Dokumen
-
-**Path sesi:**
-```
-users/{ownerUid}/projects/{projectId}/chatSessions/{sessionId}
-```
-
-**Data sesi (upsert — create jika belum ada, update jika sudah ada):**
-```json
-{
-  "id": "sim_abc12345",
-  "projectId": "my-project-id",
-  "source": "SIMULATOR",
-  "title": "Halo, apa yang bisa kamu bantu?",
-  "messageCount": 3,
-  "createdAt": "2025-01-01T00:00:00Z",
-  "updatedAt": "2025-01-01T00:05:00Z"
-}
-```
-
-> **`title`**: Ambil dari **pesan pertama user** di sesi ini (potong 60 karakter). Jika sesi sudah ada, jangan update title.
-
-**Path pesan:**
-```
-users/{ownerUid}/projects/{projectId}/chatSessions/{sessionId}/messages/{autoId}
-```
-
-**Data pesan user (add document):**
-```json
-{
-  "role": "user",
-  "content": "Halo, apa yang bisa kamu bantu?",
-  "timestamp": "2025-01-01T00:00:00Z"
-}
-```
-
-**Data pesan assistant (add document setelah response LLM):**
-```json
-{
-  "role": "assistant",
-  "content": "Halo! Saya siap membantu kamu.",
-  "timestamp": "2025-01-01T00:00:01Z",
-  "metadata": {
-    "route": "DIRECT",
-    "latencyMs": 342,
-    "requestId": "req_abc123",
-    "retrievalSources": 0
-  }
-}
-```
-
-### Bagaimana cara dapat `ownerUid`?
-
-Dari API key header (`x-api-key`), lookup ke Firestore index:
-
-**Collection: `_apiKeyIndex/{hashedKey}`**
-```json
-{
-  "ownerUid": "uid123",
-  "projectId": "project-id",
-  "status": "active"
-}
-```
-
-Rekomendasi: hash API key dengan SHA-256 sebagai document ID untuk lookup O(1).
-
----
-
-## 2. Analytics Events
-
-### Kapan ditulis?
-**Setiap request selesai diproses** — baik sukses, error, maupun fallback.
-
-### Path dokumen
-```
-users/{ownerUid}/projects/{projectId}/analyticsEvents/{autoId}
-```
-
-### Schema event (semua field wajib diisi)
-
-```json
-{
-  "requestId": "req_abc123xyz",
-  "projectId": "my-project-id",
-  "source": "SDK",
-  "route": "RAG",
-  "status": "SUCCESS",
-  "latencyMs": 342,
-  "timestamp": "2025-01-01T00:00:00Z",
-  "createdAt": "2025-01-01T00:00:00Z",
-  "functionName": null,
-  "retrievalSources": 3,
-  "appName": "My Flutter App",
-  "sessionId": "sim_abc12345"
-}
-```
-
-### Nilai yang valid
-
-| Field | Nilai yang valid |
-|-------|-----------------|
-| `source` | `"SDK"` / `"SIMULATOR"` / `"DASHBOARD"` |
-| `route` | `"RAG"` / `"FUNCTION"` / `"DIRECT"` |
-| `status` | `"SUCCESS"` / `"ERROR"` / `"FALLBACK"` |
-| `functionName` | nama fungsi jika FUNCTION, `null` jika tidak |
-| `retrievalSources` | jumlah chunk RAG yang diinjeksi |
-| `appName` | dari header `x-infria-app-name`, `null` jika dari console |
-
-### Logic penentuan `route`:
-```
-IF response berisi function_call → route = "FUNCTION"
-ELSE IF ragChunksInjected > 0    → route = "RAG"
-ELSE                              → route = "DIRECT"
-```
-
-### Logic penentuan `status`:
-```
-IF exception / HTTP error thrown  → status = "ERROR"
-ELSE IF ragFallback === true       → status = "FALLBACK"
-ELSE                               → status = "SUCCESS"
+[ Flutter SDK / Web Console Simulator ]
+                │
+                ▼  (HTTP POST /v1/runtime/chat)
+    [ INFRIA Backend (Cloud Functions) ]
+        ├── Validasi API Key & Tenant
+        ├── RAG Vector Search (Firestore Native Cosine)
+        ├── Ambil AI Config & Active Functions
+        ├── Ambil Riwayat Chat (chatSessions/{sessionId}/messages)
+        │
+        ▼  (HTTP POST Webhook — Normalized Payload)
+         [ n8n Workflow (AI Orchestrator) ]
+             ├── Susun System Prompt (Persona + RAG Context)
+             ├── Inject Conversation History ke LLM
+             ├── Bind Tools / Functions
+             └── Call LLM (OpenAI / Claude)
+        │
+        ▼  (HTTP 200 Response — { type: "message" | "function_call" })
+    [ INFRIA Backend (Cloud Functions) ]
+        ├── Simpan Pesan User & Assistant ke Firestore
+        ├── Catat Analytics Event ke Firestore
+        │
+        ▼  (HTTP 200 Response)
+[ Flutter SDK / Web Console Simulator ]
 ```
 
 ---
 
-## 3. Validasi App Registration (Connected App)
+## 2. Kenapa n8n Tidak Perlu Simple Memory & Tidak Perlu Baca Firestore?
 
-### Background
+| Pendekatan | Masalah / Kelemahan | Solusi INFRIA (v2.0) |
+|---|---|---|
+| **n8n Simple Memory** | Data tersimpan lokal di memory n8n. Jika n8n restart atau scale multi-worker, memory hilang. Web Console Simulator & Flutter SDK tidak bisa melihat riwayat chat. | ❌ **JANGAN PAKAI**. |
+| **n8n Colok Firestore** | Perlu Google Service Account, setup credentials JSON di n8n, rawan permission error, workflow n8n jadi berat & lambat. | ❌ **TIDAK PERLU**. |
+| **Stateless via Backend (Recommended)** | Backend yang mengambil 10 pesan terakhir dari Firestore dan mengirimkannya ke n8n di array `conversationHistory`. Selesai LLM menjawab, Backend yang menyimpannya ke Firestore. | ✅ **YANG KITA PAKAI**. n8n murni *stateless*. |
 
-Hanya API key tidak cukup — siapapun yang tau key bisa pakai tanpa terdeteksi. Flutter SDK harus **mendaftarkan dirinya** (register app) saat `initializeApp()` agar muncul di Connected Apps console.
+---
 
-### Endpoint baru yang perlu dibuat di n8n:
+## 3. Webhook Setup di n8n
 
-```
-POST /runtime/register-app
-```
+1. **Buat Webhook Node:**
+   - **Method:** `POST`
+   - **Path:** `/runtime/chat` (atau sesuai konfigurasi n8n kamu)
+   - **Respond:** `Using 'Respond to Webhook' Node` (agar n8n bisa return JSON setelah LLM selesai)
+2. **Autentikasi (Optional tapi Recommended):**
+   - Header: `Authorization: Bearer <N8N_SHARED_SECRET>`
+3. Masukkan URL Webhook n8n production/tunnel ke `.env` Backend:
+   ```env
+   N8N_RUNTIME_WEBHOOK=https://your-n8n-instance.com/webhook/runtime/chat
+   N8N_SHARED_SECRET=your_secret_key_here
+   ```
 
-**Headers yang dikirim SDK:**
-```
-x-api-key:           infria_pk_...
-x-infria-app-name:   Toko Kita App
-x-infria-platform:   flutter
-x-infria-package:    com.tokokita.app
-Content-Type:        application/json
-```
+---
 
-**Body:**
+## 4. Input Payload (Yang Dikirim Backend ke n8n)
+
+Backend akan mengirimkan HTTP POST JSON dengan salah satu dari 2 skenario:
+
+### Skenario A: Chat Baru / Chat Lanjutan (Fresh Message)
+
 ```json
 {
-  "projectId": "my-project-id",
-  "appVersion": "1.0.0"
-}
-```
-
-**Alur handler n8n:**
-```
-1. Validate API key → dapat ownerUid + projectId
-2. Cek Firestore: users/{ownerUid}/projects/{projectId}/connectedApps
-   WHERE appName == headers['x-infria-app-name']
-3a. Jika belum ada → create doc:
+  "project": {
+    "id": "prj_store_abc123"
+  },
+  "session": {
+    "id": "sess_flutter_001"
+  },
+  "user": {
+    "id": "usr_owner_xyz"
+  },
+  "ai": {
+    "assistantName": "INFRIA Assistant",
+    "role": "Customer Service",
+    "language": "id",
+    "tone": "friendly",
+    "model": "gpt-4o-mini"
+  },
+  "knowledge": {
+    "enabled": true,
+    "context": [
+      "Potongan dokumen RAG 1: Jam operasional toko adalah 08.00 - 21.00 WIB.",
+      "Potongan dokumen RAG 2: Pengiriman same-day maksimal order pukul 14.00 WIB."
+    ]
+  },
+  "functions": [
     {
-      "appName": "Toko Kita App",
-      "platform": "flutter",
-      "packageId": "com.tokokita.app",
-      "apiKeyPrefix": "infria_pk_****xxxx",
-      "status": "active",
-      "firstSeen": "ISO",
-      "lastSeen": "ISO",
-      "appVersion": "1.0.0"
+      "id": "fn_check_order",
+      "name": "check_order_status",
+      "description": "Mengecek status pengiriman pesanan pelanggan berdasarkan Order ID",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "description": "Nomor ID pesanan (contoh: INV-001)"
+          }
+        },
+        "required": ["orderId"]
+      }
     }
-3b. Jika sudah ada → update lastSeen + appVersion
-4. Return: { success: true, appId: "...", registered: true }
-```
-
-### Validasi pada setiap `/runtime/chat` request:
-
-```
-1. Baca header x-infria-app-name (optional tapi dianjurkan)
-2. Jika ada: cek di connectedApps apakah terdaftar?
-3. Jika tidak terdaftar → masih izinkan (PERMISSIVE MODE),
-   log "unknown_app" di analytics
-4. Jika terdaftar → simpan appName di analytics event
-```
-
-> Gunakan **Permissive Mode** dulu selama development. Switch ke strict (403) setelah production stable.
-
----
-
-## 4. Conversation History (Memory LLM)
-
-Request body yang dikirim console/SDK akan menyertakan history:
-
-```json
-{
-  "projectId": "...",
-  "sessionId": "sim_abc123",
-  "message": "Pesanan saya sudah sampai belum?",
-  "source": "SDK",
+  ],
+  "message": "Pesanan INV-001 saya sudah dikirim belum ya?",
   "conversationHistory": [
-    { "role": "user", "content": "Halo" },
-    { "role": "assistant", "content": "Halo! Ada yang bisa saya bantu?" },
-    { "role": "user", "content": "Saya mau cek pesanan" },
-    { "role": "assistant", "content": "Baik, nomor pesanan berapa?" }
+    { "role": "user", "content": "Halo, saya mau tanya pesanan" },
+    { "role": "assistant", "content": "Halo! Boleh sebutkan nomor pesanannya?" }
   ]
 }
 ```
 
-n8n harus inject ini ke LLM messages array:
+### Skenario B: Resume Function Result (Setelah Client Flutter Selesai Eksekusi Function)
+
+Jika sebelumnya AI meminta function call, SDK Flutter mengeksekusi function tersebut di HP user, lalu mengirim hasilnya kembali ke Backend. Backend kemudian memanggil webhook n8n lagi untuk **Resume** LLM:
 
 ```json
-[
-  { "role": "system", "content": "You are INFRIA Assistant..." },
-  { "role": "user", "content": "Halo" },
-  { "role": "assistant", "content": "Halo! Ada yang bisa saya bantu?" },
-  ...
-  { "role": "user", "content": "Pesanan saya sudah sampai belum?" }
-]
-```
-
-> Batasi: ambil **maksimal 10 pesan terakhir** (5 pasang) untuk efisiensi token.
-
----
-
-## 5. Checklist untuk Tim n8n
-
-- [ ] **Simpan sesi** ke `.../chatSessions/{sessionId}` (upsert)
-- [ ] **Simpan messages** ke `.../chatSessions/{sessionId}/messages/{autoId}`
-- [ ] **Tulis analytics event** ke `.../analyticsEvents/{autoId}` setiap request
-- [ ] **Buat `POST /runtime/register-app`** untuk SDK registration
-- [ ] **Validasi appName** pada `/runtime/chat` (permissive mode)
-- [ ] **Support `conversationHistory`** di request body untuk LLM context (max 10 msg)
-- [ ] **Buat `_apiKeyIndex`** collection untuk fast lookup API key → ownerUid
-- [ ] **Generate + return `requestId`** di setiap response
-- [ ] **Simpan `appName`** dari header `x-infria-app-name` ke analytics event
-
----
-
-## 6. Firestore Collection Map (Ringkasan)
-
-```
-users/
-  {ownerUid}/
-    projects/
-      {projectId}/
-        analyticsEvents/          ← BARU: tulis setelah setiap request
-          {autoId}
-
-        chatSessions/             ← BARU: tulis saat ada percakapan
-          {sessionId}
-            messages/
-              {autoId}
-
-        connectedApps/            ← BARU: tulis saat SDK register
-          {autoId}
-
-        knowledge/                ← sudah ada
-        functions/                ← sudah ada
-        ai_config/                ← sudah ada
-
-_apiKeyIndex/                    ← BARU: fast lookup API key → ownerUid
-  {sha256(apiKey)}
+{
+  "resume": true,
+  "requestId": "req_8600cd91b7024e0b",
+  "project": { "id": "prj_store_abc123" },
+  "session": { "id": "sess_flutter_001" },
+  "user": { "id": "usr_owner_xyz" },
+  "ai": {
+    "assistantName": "INFRIA Assistant",
+    "role": "Customer Service",
+    "language": "id",
+    "tone": "friendly",
+    "model": "gpt-4o-mini"
+  },
+  "functions": [ ...daftar function sama seperti di atas... ],
+  "functionResult": {
+    "name": "check_order_status",
+    "arguments": { "orderId": "INV-001" },
+    "result": {
+      "status": "SHIPPED",
+      "courier": "JNE",
+      "trackingNumber": "JNE123456789"
+    }
+  },
+  "conversationHistory": [ ...10 pesan terakhir... ]
+}
 ```
 
 ---
 
-*Pertanyaan atau klarifikasi: hubungi tim console INFRIA.*
+## 5. Yang Perlu Dilakukan n8n Terhadap Payload Tersebut
+
+1. **Susun System Prompt:**
+   Gabungkan `ai.*` dan `knowledge.context`:
+   ```text
+   Kamu adalah {{ $json.ai.assistantName }}, berperan sebagai {{ $json.ai.role }}.
+   Gunakan bahasa {{ $json.ai.language }} dengan nada bicara {{ $json.ai.tone }}.
+
+   Gunakan informasi berikut sebagai referensi fakta (Knowledge Base):
+   {{ $json.knowledge.context.join("\n\n") }}
+   ```
+2. **Susun Messages Array untuk LLM:**
+   - Masukkan System Prompt di atas (`role: "system"`).
+   - Masukkan riwayat chat dari `conversationHistory` (`role: "user"` / `role: "assistant"`).
+   - Jika `resume === true`: masukkan pesan tool call dan `functionResult` ke context pesan LLM.
+   - Jika chat biasa: masukkan pesan user saat ini (`message`).
+3. **Pasang Tools/Function Calling:**
+   - Bind array `functions` ke tool schema OpenAI / Claude Node.
+4. **Jalankan LLM.**
+
+---
+
+## 6. Output Response (Yang Wajib Dikembalikan n8n ke Backend)
+
+Gunakan node **Respond to Webhook** dengan status `200 OK`. Format response harus berupa JSON persis seperti salah satu dari 2 tipe berikut:
+
+### Tipe 1: AI Menjawab Teks Biasa (`type: "message"`)
+Gunakan format ini ketika AI memberikan jawaban teks langsung ke user:
+
+```json
+{
+  "type": "message",
+  "data": {
+    "content": "Pesanan INV-001 Anda saat ini sudah dikirim via JNE dengan resi JNE123456789."
+  }
+}
+```
+
+### Tipe 2: AI Memutuskan Memanggil Fungsi (`type: "function_call"`)
+Gunakan format ini jika AI mendeteksi butuh data eksternal dari HP/Flutter:
+
+```json
+{
+  "type": "function_call",
+  "data": {
+    "function": "check_order_status",
+    "arguments": {
+      "orderId": "INV-001"
+    }
+  }
+}
+```
+
+> ⚠️ **Catatan penting struktur response:**  
+> Backend INFRIA memvalidasi secara ketat: `response.type` harus `'message'` atau `'function_call'` (atau `'error'`).  
+> Pastikan isi responnya dibungkus dalam objek `data`.
+
+### Tipe 3: Terjadi Error di n8n / Provider AI (`type: "error"`)
+Jika API OpenAI rate-limit atau error:
+
+```json
+{
+  "type": "error",
+  "message": "OpenAI rate limit exceeded or invalid API key"
+}
+```
+
+---
+
+## 7. Checklist untuk Developer n8n
+
+- [ ] Buat Webhook Node `POST` dengan mode `Respond to Webhook`.
+- [ ] Parsing `ai.assistantName`, `ai.role`, `ai.tone`, dan `ai.language` ke System Message.
+- [ ] Inject array `knowledge.context` ke dalam System Message (jika `knowledge.enabled === true` dan ada isinya).
+- [ ] Inject `conversationHistory` ke messages array LLM.
+- [ ] Bind array `functions` ke Tools / Function Calling node LLM.
+- [ ] Handle response:
+  - Jika LLM menghasilkan teks balasan → return JSON `{ type: "message", data: { content: "..." } }`.
+  - Jika LLM memanggil tool → return JSON `{ type: "function_call", data: { function: "...", arguments: { ... } } }`.
+- [ ] **TIDAK PERLU** membuat koneksi Firestore atau node Firestore di n8n.
+- [ ] **TIDAK PERLU** memasang node Simple Memory di n8n.
