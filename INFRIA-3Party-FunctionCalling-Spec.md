@@ -145,12 +145,118 @@ sequenceDiagram
 
 ---
 
-## 3. Dinamika Session Title & Riwayat Chat (Menjawab Masalah Title)
+## 3. Protokol Komunikasi & Keamanan: Mengapa Direct HTTP (Bukan Firestore Realtime)?
 
-### 3.1. Masalah yang Sering Terjadi
+### 3.1. Pertanyaan Kritis Arsitektur
+> *"Apakah cara komunikasi BE ke SDK itu dengan menulis ke Firestore dan SDK harus listen realtime dengan Firestore? Kenapa BE tidak langsung request ke SDK? Takutnya device lain menerima request atau membajak request tersebut?"*
+
+### 3.2. Jawaban Tegas: 100% Direct HTTP Request-Response (Bukan Listener Firestore)!
+
+Komunikasi antara **Flutter SDK dan Backend INFRIA** menggunakan **Direct HTTP REST API** biasa (pola *Two-Step HTTP Handshake*). Flutter SDK **tidak perlu** dan **tidak boleh** melakukan realtime listening ke Firestore.
+
+#### Kenapa Server (BE) Tidak Bisa Langsung "Nembak Request" ke HP?
+Di jaringan seluler, setiap smartphone berada di balik **Carrier-Grade NAT (CGNAT), Firewall operator telko, dan IP privat**. Server di Google Cloud Functions tidak mengetahui alamat IP publik HP kamu dan dilarang oleh firewall operator untuk membuka koneksi TCP baru secara sepihak ke HP.
+
+Satu-satunya cara server bisa mengirimkan instruksi ke HP adalah: **HP yang membuka koneksi duluan (HTTP POST), lalu Server membalas instruksi lewat jalur koneksi yang sedang terbuka tersebut (HTTP 200 Response).**
+
+---
+
+### 3.3. Perbandingan: Direct HTTP vs Firestore Realtime Listener
+
+| Aspek | Direct HTTP Handshake (Yang Dipakai INFRIA) | Firestore Realtime Listener (Dihindari) |
+| :--- | :--- | :--- |
+| **Keamanan & Privasi** | 🔒 **100% Terisolasi.** Respons hanya kembali ke koneksi TLS/TCP HP pemanggil. Device lain mustahil menyadap. | ⚠️ Rawan jika security rules bocor; device lain di project yang sama berpotensi membaca event. |
+| **Dependensi SDK** | 🪶 **Sangat Ringan.** Cukup `package:http` standar Dart. Tidak butuh Firebase Core / Firestore. | 🐘 **Berat.** Wajib instal Firebase Core, Cloud Firestore, setup `google-services.json` di Android/iOS. |
+| **Efisiensi & Biaya** | 💰 **Nol Biaya Listener.** Hanya 2 kali hit HTTP standar. | 💸 **Boros Biaya.** Firestore menagih biaya setiap *document read/listen* yang aktif terus-menerus. |
+| **Kecepatan Latensi** | ⚡ **Sub-second.** Response langsung dikirim begitu AI n8n selesai berpikir. | ⏱️ Bergantung pada sync socket Firestore dan propagasi snapshot data. |
+| **Standar Industri** | ✅ Mengikuti standar resmi **OpenAI Function Calling**, **Google Gemini Tools**, dan **Claude Tool Use**. | ❌ Non-standar untuk API tool execution. |
+
+---
+
+### 3.4. Kode Implementasi Two-Step Handshake di Flutter SDK
+
+Di sisi SDK, Flutter cukup melakukan 2 langkah panggilan HTTP sekuensial:
+
+```dart
+Future<String> sendMessage(String userMessage) async {
+  // ── PANGGILAN 1: Kirim chat ke Backend ──────────────────────────────────
+  final res1 = await http.post(
+    Uri.parse('$baseUrl/v1/runtime/chat'),
+    headers: {'x-api-key': apiKey, 'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'projectId': projectId,
+      'sessionId': sessionId,
+      'message': userMessage,
+    }),
+  );
+  
+  final data1 = jsonDecode(res1.body);
+
+  // Jika AI langsung menjawab teks:
+  if (data1['type'] == 'message') {
+    return data1['data']['content'];
+  }
+
+  // Jika AI meminta eksekusi Function Call:
+  if (data1['type'] == 'function_call') {
+    final fnName = data1['data']['function'];
+    final fnArgs = data1['data']['arguments'];
+    final callId = data1['data']['functionCallId'];
+    final reqId = data1['requestId'];
+
+    // 1. Eksekusi fungsi lokal di HP yang sudah di-register
+    final handler = _registeredFunctions[fnName];
+    if (handler == null) {
+      throw Exception('Function $fnName belum didaftarkan di Flutter SDK.');
+    }
+    
+    // Jalankan kode Dart lokal (akses SQLite, sensor, dsb)
+    final localResult = await handler(fnArgs);
+
+    // ── PANGGILAN 2: Kirim hasil lokal kembali ke Backend ────────────────
+    final res2 = await http.post(
+      Uri.parse('$baseUrl/v1/runtime/function-result'),
+      headers: {'x-api-key': apiKey, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'projectId': projectId,
+        'requestId': reqId,
+        'functionCallId': callId,
+        'function': {'name': fnName, 'arguments': fnArgs},
+        'result': localResult,
+      }),
+    );
+
+    final data2 = jsonDecode(res2.body);
+    // Ini jawaban akhir dari AI setelah membaca data lokal HP!
+    return data2['data']['content'];
+  }
+
+  throw Exception('Unknown response type');
+}
+```
+
+---
+
+### 3.5. Lalu Untuk Apa Firestore Dipakai di Backend?
+
+Perhatikan: **Firestore HANYA diakses oleh Backend, TIDAK PERNAH di-listen oleh Flutter SDK!**
+
+Firestore difungsikan murni untuk 3 hal:
+1. **Security Guard & Idempotency (`runtime_states/{requestId}`):**
+   Memastikan tidak ada orang luar yang bisa memalsukan callback function result tanpa ID korelasi yang sah, dan memastikan jika koneksi HP retry, backend tidak mengeksekusi LLM berulang kali. Dokumen ini otomatis kadaluarsa (TTL) dalam 120 detik.
+2. **Session Persistence (`chatSessions/{sessionId}/messages`):**
+   Menyimpan riwayat pesan agar saat user membuka kembali aplikasi atau saat tim memantau di Web Console, riwayat percakapan tidak hilang.
+3. **Analytics & Audit Logging (`analytics/{projectId}/events`):**
+   Mencatat latensi, status keberhasilan, nama fungsi yang dieksekusi, dan evaluasi grounding untuk dashboard performa.
+
+---
+
+## 4. Dinamika Session Title & Riwayat Chat (Menjawab Masalah Title)
+
+### 4.1. Masalah yang Sering Terjadi
 > *"Kemarin kan bikin chat sessions, terus dia ngasih title. Kalau BE ngirim chat ke-2, apakah title kena respon lagi dan kemungkinan berubah beda? Itu gimana?"*
 
-### 3.2. Solusi & Logika Arsitektur:
+### 4.2. Solusi & Logika Arsitektur:
 1. **Pesan Pertama (Turn 1):**
    - Belum ada judul di database.
    - n8n meminta LLM men-generate `sessionTitle` singkat (3–5 kata) berdasarkan topik pembuka user.
@@ -181,9 +287,9 @@ sequenceDiagram
 
 ---
 
-## 4. Spesifikasi Kapabilitas (Function Calling) yang Dikirim ke n8n
+## 5. Spesifikasi Kapabilitas (Function Calling) yang Dikirim ke n8n
 
-### 4.1. Kenapa Tidak Semua Fungsi Dikirim? (Token Efficiency)
+### 5.1. Kenapa Tidak Semua Fungsi Dikirim? (Token Efficiency)
 Jika project memiliki 50 fungsi aktif, mengirim semuanya ke LLM akan:
 - Memboroskan token context window (biaya mahal).
 - Membuat LLM bingung (*hallucination / tool confusion*).
@@ -221,9 +327,9 @@ Di dalam n8n, array ini di-pass langsung ke node **AI Agent / OpenAI Model Tool 
 
 ---
 
-## 5. Kontrak Teknis Payload (Data Contracts)
+## 6. Kontrak Teknis Payload (Data Contracts)
 
-### 5.1. Pihak 1: n8n Workflow (AI Orchestrator)
+### 6.1. Pihak 1: n8n Workflow (AI Orchestrator)
 
 #### A. Input yang Diterima n8n dari Backend:
 Webhook n8n menerima payload terstandardisasi (*Normalized Orchestration Payload*):
@@ -334,7 +440,7 @@ n8n harus menggunakan node **Respond to Webhook** dengan status `200 OK` mengemb
 
 ---
 
-### 5.2. Pihak 2: Backend INFRIA (Cloud Functions)
+### 6.2. Pihak 2: Backend INFRIA (Cloud Functions)
 
 Backend bertindak sebagai **Validator & State Machine**:
 1. **Saat n8n mengembalikan `function_call`:**
@@ -378,7 +484,7 @@ Backend bertindak sebagai **Validator & State Machine**:
 
 ---
 
-### 5.3. Pihak 3: Flutter SDK (Client Device)
+### 6.3. Pihak 3: Flutter SDK (Client Device)
 
 #### A. Inisialisasi & Registrasi Fungsi Lokal di Flutter
 Pengembang aplikasi cukup mendefinisikan nama kapabilitas dan fungsi Dart yang akan dipanggil:
@@ -461,7 +567,7 @@ Jika AI meminta fungsi yang belum diimplementasikan oleh developer Flutter di HP
 
 ---
 
-## 6. Skenario Khusus: Konfirmasi Sebelum Eksekusi (Sensitive Actions)
+## 7. Skenario Khusus: Konfirmasi Sebelum Eksekusi (Sensitive Actions)
 
 Ada kalanya kapabilitas bernilai sensitif (misal: *transfer uang, batalkan pesanan, hapus akun*). Dalam kasus ini, alurnya adalah:
 
@@ -476,10 +582,76 @@ Ada kalanya kapabilitas bernilai sensitif (misal: *transfer uang, batalkan pesan
 
 ---
 
-## 7. Ringkasan Tugas & Action Item untuk Masing-Masing Tim
+## 8. User Experience (UX) di Flutter SDK: Thinking, Executing, & Reasoning States
+
+### 8.1. Mengapa UX Status Ini Penting?
+Saat user mengirim pertanyaan yang memicu Function Calling, ada jeda waktu (latency) beberapa detik:
+1. LLM menganalisis pesan & mencari dokumen RAG (1–2 detik).
+2. Flutter SDK mengeksekusi handler lokal di perangkat HP (0.3–1 detik).
+3. LLM merangkum jawaban akhir berdasarkan return data fungsi (1–2 detik).
+
+Agar pengguna tidak mengira aplikasi *hang* atau *stuck*, SDK harus memberikan **visual feedback real-time** tentang apa yang sedang dikerjakan AI (seperti animasi step di ChatGPT / Perplexity).
+
+### 8.2. Local State Machine di Flutter SDK (Tanpa Butuh Firestore Listener)
+Karena Flutter SDK sendiri yang mengontrol panggilan HTTP dan eksekusi fungsi lokal di HP, **SDK dapat memancarkan (*emit*) status perubahan secara instan ke UI** menggunakan `Stream` atau `ValueNotifier`, tanpa perlu mendengarkan database Firestore:
+
+```dart
+/// Enum status proses AI yang dipancarkan SDK ke Widget UI
+enum InfriaExecutionStatus {
+  idle,                // Menunggu input user
+  thinking,            // AI sedang menganalisis pesan & mencari konteks...
+  callingCapability,   // AI meminta eksekusi fungsi lokal di HP...
+  synthesizing,        // AI sedang menyusun jawaban akhir...
+  error,               // Terjadi kesalahan koneksi / timeout
+}
+```
+
+### 8.3. Contoh Implementasi di UI Chat Flutter
+
+Developer Flutter yang menggunakan SDK cukup mendengarkan status tersebut untuk menampilkan widget animasi status proses:
+
+```dart
+// Di dalam State ChatScreen Flutter:
+@override
+void initState() {
+  super.initState();
+  
+  // Dengarkan perubahan status dari SDK secara realtime
+  InfriaChat.instance.statusStream.listen((status) {
+    setState(() {
+      switch (status) {
+        case InfriaExecutionStatus.thinking:
+          _statusLabel = "🧠 AI sedang menganalisis pertanyaan...";
+          break;
+        case InfriaExecutionStatus.callingCapability:
+          _statusLabel = "⚡ Menjalankan fungsi lokal di perangkat...";
+          break;
+        case InfriaExecutionStatus.synthesizing:
+          _statusLabel = "✍️ AI sedang menyusun jawaban akhir...";
+          break;
+        case InfriaExecutionStatus.idle:
+          _statusLabel = null;
+          break;
+        case InfriaExecutionStatus.error:
+          _statusLabel = "❌ Terjadi kendala saat memproses.";
+          break;
+      }
+    });
+  });
+}
+```
+
+Dengan pola ini:
+- ⚡ **Nol Latensi Sinkronisasi:** UI langsung berganti seketika SDK menerima respons `function_call` dari server.
+- 💰 **Nol Biaya Database:** Tidak ada read/listen Firestore yang memakan kuota dan biaya.
+- ✨ **Pengalaman Pengguna (UX) Premium:** Pengguna merasa aplikasi sangat cerdas dan transparan karena mengetahui langkah pemikiran AI secara bertahap.
+
+---
+
+## 9. Ringkasan Tugas & Action Item untuk Masing-Masing Tim
 
 | Tim | Apa yang Harus Dilakukan | Checklist Status |
 | :--- | :--- | :--- |
 | **Tim Backend (Cloud Functions)** | <ul><li>Sudah implementasi validasi JSON Schema & Policy Enforcement</li><li>Sudah implementasi Smart Function Selector (max 8)</li><li>Sudah implementasi `runtime_states` dengan TTL 120s & Idempotency</li><li>Sudah menyediakan endpoint `/v1/runtime/chat`, `/v1/runtime/function-result`, dan `/v1/functions/test`</li><li>Sudah otomatis menyimpan sesi & riwayat chat di Firestore</li></ul> | ✅ **SELESAI (Tested with 24 Jest tests)** |
 | **Tim n8n Workflow** | <ul><li>Buat Webhook node `POST /runtime/chat` dengan mode `Respond to Webhook`</li><li>Inject System Message (`ai.*` + `knowledge.context`)</li><li>Bind array `functions` ke Tool Definition LLM</li><li>Inject `conversationHistory` ke LLM</li><li>Kembalikan format standar `{ type: "message", data: { content, sessionTitle, metadata } }` atau `{ type: "function_call", data: { function, arguments, sessionTitle, metadata } }`</li><li>Jangan pasang node Firestore & jangan pasang Simple Memory di n8n</li></ul> | 🔄 **Siap Dikonfigurasi di Workflow n8n** |
-| **Tim Flutter SDK** | <ul><li>Implementasikan method `InfriaChat.instance.registerFunction(name, handler)`</li><li>Saat menerima respons `type == "function_call"`, panggil handler lokal</li><li>Setelah handler return, otomatis kirim HTTP POST ke `/v1/runtime/function-result`</li><li>Tampilkan jawaban teks final ke layar aplikasi chat</li></ul> | 🔄 **Siap Diintegrasikan di SDK** |
+| **Tim Flutter SDK** | <ul><li>Implementasikan method `InfriaChat.instance.registerFunction(name, handler)`</li><li>Gunakan Two-Step HTTP Handshake dengan `package:http` biasa</li><li>Sediakan `statusStream` (thinking, callingCapability, synthesizing) untuk animasi UX di UI</li><li>Saat menerima respons `type == "function_call"`, panggil handler lokal</li><li>Setelah handler return, otomatis kirim HTTP POST ke `/v1/runtime/function-result`</li><li>Tampilkan jawaban teks final ke layar aplikasi chat</li></ul> | 🔄 **Siap Diintegrasikan di SDK** |
