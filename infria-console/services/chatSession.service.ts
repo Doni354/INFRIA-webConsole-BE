@@ -56,14 +56,26 @@ function generateTitle(firstUserMessage: string): string {
 export const chatSessionService = {
   /**
    * List all sessions for a project, sorted by most recently updated.
+   * Gracefully falls back to in-memory sort if Firestore order index is missing.
    */
   async list(projectId: string): Promise<ChatSession[]> {
     const uid = getUid();
     const col = chatSessionsCol(uid, projectId);
-    const snap = await getDocs(
-      query(col, orderBy("updatedAt", "desc"), limit(50))
-    );
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ChatSession));
+    try {
+      const snap = await getDocs(
+        query(col, orderBy("updatedAt", "desc"), limit(50))
+      );
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ChatSession));
+    } catch (err) {
+      console.warn("Ordered chatSessions query failed, attempting unordered fallback:", err);
+      const snap = await getDocs(query(col, limit(50)));
+      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ChatSession));
+      return items.sort((a, b) => {
+        const timeA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+        const timeB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        return timeB - timeA;
+      });
+    }
   },
 
   /**
@@ -73,21 +85,42 @@ export const chatSessionService = {
     projectId: string,
     sessionId: string,
     source: ExecutionSource,
-    firstMessage: string
+    firstMessage: string,
+    customTitle?: string
   ): Promise<ChatSession> {
     const uid = getUid();
     const now = new Date().toISOString();
     const session: ChatSession = {
       id: sessionId,
       projectId,
-      title: generateTitle(firstMessage),
+      title: customTitle || generateTitle(firstMessage),
       source,
       messageCount: 0,
       createdAt: now,
       updatedAt: now,
     };
-    await setDoc(chatSessionDoc(uid, projectId, sessionId), session);
+    await setDoc(chatSessionDoc(uid, projectId, sessionId), session, { merge: true });
     return session;
+  },
+
+  /**
+   * Update session title (e.g. from AI generated sessionTitle).
+   */
+  async updateTitle(
+    projectId: string,
+    sessionId: string,
+    title: string
+  ): Promise<void> {
+    const uid = getUid();
+    const sessionRef = chatSessionDoc(uid, projectId, sessionId);
+    await setDoc(
+      sessionRef,
+      {
+        title,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
   },
 
   /**

@@ -188,7 +188,14 @@ Gunakan format ini ketika AI memberikan jawaban teks langsung ke user:
 {
   "type": "message",
   "data": {
-    "content": "Pesanan INV-001 Anda saat ini sudah dikirim via JNE dengan resi JNE123456789."
+    "content": "Pesanan INV-001 Anda saat ini sudah dikirim via JNE dengan resi JNE123456789.",
+    "sessionTitle": "Status Pengiriman Pesanan INV-001",
+    "metadata": {
+      "evidenceLevel": "HIGH",
+      "evidenceReason": "Ditemukan pada dokumen SOP Pengiriman Bab 3.",
+      "isKnowledgeGap": false,
+      "topicCategory": "Pengiriman & Kurir"
+    }
   }
 }
 ```
@@ -203,6 +210,13 @@ Gunakan format ini jika AI mendeteksi butuh data eksternal dari HP/Flutter:
     "function": "check_order_status",
     "arguments": {
       "orderId": "INV-001"
+    },
+    "sessionTitle": "Pengecekan Status Pesanan",
+    "metadata": {
+      "evidenceLevel": "HIGH",
+      "evidenceReason": "AI membutuhkan data live dari perangkat/API untuk Order ID ini.",
+      "isKnowledgeGap": false,
+      "topicCategory": "Pengiriman & Kurir"
     }
   }
 }
