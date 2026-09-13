@@ -156,6 +156,57 @@ export interface AnalyticsMetrics {
   functionCalls: number;
   fallbacks: number;
   avgLatencyMs: number;
+  // Evidence & Grounding
+  groundingScore: number; // percentage (0-100) of HIGH + MEDIUM evidence
+  evidenceBreakdown: {
+    high: number;
+    medium: number;
+    low: number;
+    none: number;
+  };
+  // Knowledge Gap Intelligence
+  trueGapsCount: number;
+  ambiguousDocsCount: number;
+  outOfScopeCount: number;
+  trueGaps: {
+    topicCategory: string;
+    querySnippet: string;
+    evidenceReason?: string;
+    count: number;
+    lastSeen: string;
+  }[];
+  ambiguousDocs: {
+    topicCategory: string;
+    querySnippet: string;
+    evidenceReason?: string;
+    count: number;
+    lastSeen: string;
+  }[];
+  outOfScopeQueries: {
+    topicCategory: string;
+    querySnippet: string;
+    count: number;
+    lastSeen: string;
+  }[];
+  // Topics
+  topTopics: {
+    category: string;
+    count: number;
+    percentage: number;
+  }[];
+  // RAG Health
+  ragHitRate: number; // % of queries that had context chunks
+  avgRetrievalSources: number;
+  // Function Calling
+  functionBreakdown: {
+    functionName: string;
+    count: number;
+  }[];
+  functionOpportunities: {
+    querySnippet: string;
+    suggestedFunction: string;
+    count: number;
+  }[];
 }
 
 /** Where the execution originated from */
@@ -184,6 +235,9 @@ export interface ActivityEntry {
   topicCategory?: string;
   sessionId?: string;
   appName?: string;
+  querySnippet?: string;
+  responseSnippet?: string;
+  trace?: RuntimeTestResponse["__trace"];
   // Legacy fields kept for backwards compat
   type?: "chat" | "function_call";
   endpoint?: string;
@@ -204,8 +258,10 @@ export interface PlaygroundMessage {
     requestId?: string;
     evidenceLevel?: "HIGH" | "MEDIUM" | "LOW" | "NONE" | string;
     evidenceReason?: string;
+    isKnowledgeGap?: boolean;
     topicCategory?: string;
     functionCall?: { name: string; args: Record<string, unknown> };
+    trace?: RuntimeTestResponse["__trace"];
   };
 }
 

@@ -134,11 +134,15 @@ export const chatSessionService = {
     const uid = getUid();
     const msgCol = chatMessagesCol(uid, projectId, sessionId);
 
+    const sanitizedMetadata = message.metadata
+      ? JSON.parse(JSON.stringify(message.metadata))
+      : null;
+
     await addDoc(msgCol, {
       role: message.role,
       content: message.content,
       timestamp: message.timestamp,
-      metadata: message.metadata ?? null,
+      metadata: sanitizedMetadata,
     });
 
     // Update session metadata

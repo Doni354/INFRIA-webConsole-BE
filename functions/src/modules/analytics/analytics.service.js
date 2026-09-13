@@ -24,6 +24,8 @@ const logRuntimeEvent = async (tenant, eventDetails) => {
       functionName: eventDetails.functionName || null,
       appName: eventDetails.appName || null,
       querySnippet: eventDetails.querySnippet || null,
+      responseSnippet: eventDetails.responseSnippet || null,
+      trace: eventDetails.trace || null,
       timestamp: nowIso,
       createdAt: nowIso,
     };

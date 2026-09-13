@@ -76,11 +76,30 @@ const processChat = async (tenant, sessionId, message) => {
   const rawMeta = response.data?.metadata || {};
   const hasRagChunks = ragResult.context && ragResult.context.length > 0;
 
+  // Detect common chit-chat or greetings if n8n did not provide explicit metadata
+  const isChitChat = !hasRagChunks && /^(halo|hai|hello|hi|pagi|siang|malam|tes|test|ping|apa kabar|siapa kamu|siapa anda)[\s.?!]*$/i.test(message.trim());
+
+  let defaultEvidenceLevel = 'NONE';
+  let defaultEvidenceReason = 'Tidak ditemukan dokumen relevan di Knowledge Base.';
+  let defaultIsKnowledgeGap = true;
+  let defaultTopic = 'General Inquiry';
+
+  if (hasRagChunks) {
+    defaultEvidenceLevel = 'HIGH';
+    defaultEvidenceReason = `Grounded dengan ${ragResult.context.length} knowledge chunk.`;
+    defaultIsKnowledgeGap = false;
+  } else if (isChitChat) {
+    defaultEvidenceLevel = 'LOW';
+    defaultEvidenceReason = 'Pertanyaan umum / sapaan di luar ruang lingkup dokumen spesifik.';
+    defaultIsKnowledgeGap = false;
+    defaultTopic = 'Out of Scope / Chit-chat';
+  }
+
   const evaluation = {
-    evidenceLevel: rawMeta.evidenceLevel || (hasRagChunks ? 'HIGH' : 'NONE'),
-    evidenceReason: rawMeta.evidenceReason || (hasRagChunks ? `Grounded with ${ragResult.context.length} knowledge chunk(s).` : 'Answered directly without specific knowledge base documents.'),
-    isKnowledgeGap: typeof rawMeta.isKnowledgeGap === 'boolean' ? rawMeta.isKnowledgeGap : !hasRagChunks,
-    topicCategory: rawMeta.topicCategory || 'General Inquiry',
+    evidenceLevel: rawMeta.evidenceLevel || defaultEvidenceLevel,
+    evidenceReason: rawMeta.evidenceReason || defaultEvidenceReason,
+    isKnowledgeGap: typeof rawMeta.isKnowledgeGap === 'boolean' ? rawMeta.isKnowledgeGap : defaultIsKnowledgeGap,
+    topicCategory: rawMeta.topicCategory || defaultTopic,
   };
 
   const sessionTitle = response.data?.sessionTitle || response.sessionTitle || null;
@@ -119,22 +138,29 @@ const processChat = async (tenant, sessionId, message) => {
     };
   }
 
-  // ── Simulator Trace Metadata ───────────────────────────────────────────────
+  // ── Backend Trace Metadata (always available for observability) ───────────
+  const trace = {
+    functionsLoaded: allActiveFunctions.length,
+    functionsInjected: functions.length,
+    ragChunksInjected: ragResult.context ? ragResult.context.length : 0,
+    ragThreshold: typeof aiConfig.retrievalThreshold === 'number' ? aiConfig.retrievalThreshold : 0.70,
+    ragTopK: typeof aiConfig.retrievalTopK === 'number' ? aiConfig.retrievalTopK : 5,
+    ragFallback: Boolean(ragResult.fallback),
+    chunksPreview: (ragResult.context || []).map(c => c.substring(0, 100) + '...'),
+    evidenceLevel: evaluation.evidenceLevel,
+    evidenceReason: evaluation.evidenceReason,
+    isKnowledgeGap: evaluation.isKnowledgeGap,
+    topicCategory: evaluation.topicCategory,
+    sessionTitle,
+  };
+
+  // Internal trace for analytics logging regardless of caller source
+  response._internalTrace = trace;
+  response.retrievalSources = trace.ragChunksInjected;
+
+  // Expose __trace if in simulator mode or console testing
   if (tenant.apiKeyId === 'simulator_mode') {
-    response.__trace = {
-      functionsLoaded: allActiveFunctions.length,
-      functionsInjected: functions.length,
-      ragChunksInjected: ragResult.context.length,
-      ragThreshold: typeof aiConfig.retrievalThreshold === 'number' ? aiConfig.retrievalThreshold : 0.70,
-      ragTopK: typeof aiConfig.retrievalTopK === 'number' ? aiConfig.retrievalTopK : 5,
-      ragFallback: ragResult.fallback,
-      chunksPreview: ragResult.context.map(c => c.substring(0, 75) + '...'),
-      evidenceLevel: evaluation.evidenceLevel,
-      evidenceReason: evaluation.evidenceReason,
-      isKnowledgeGap: evaluation.isKnowledgeGap,
-      topicCategory: evaluation.topicCategory,
-      sessionTitle,
-    };
+    response.__trace = trace;
   }
 
   return response;

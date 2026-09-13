@@ -101,19 +101,22 @@ Jika AI memutuskan melakukan **Function Calling**:
 
 ### 4.1 Evidence Level (`evidenceLevel`)
 
-| Level | Kriteria | Dampak pada Sistem |
+| Level | Kriteria | Dampak pada Sistem & Rekomendasi |
 |---|---|---|
-| **`HIGH`** | Dokumen RAG memuat jawaban lengkap, jelas, dan spesifik tanpa memerlukan asumsi tambahan. | Jawaban sangat terpercaya. |
-| **`MEDIUM`** | Dokumen RAG relevan dengan topik, namun hanya menjawab sebagian pertanyaan atau membutuhkan ekstrapolasi logis. | Jawaban cukup baik, tapi ada ruang perbaikan dokumen. |
-| **`LOW`** | Dokumen RAG yang ditarik hampir tidak menjawab inti pertanyaan, atau AI harus menebak/menggunakan pengetahuan umum karena dokumen kurang spesifik. | **Ditandai sebagai indikasi Knowledge Gap**. |
-| **`NONE`** | Tidak ada dokumen RAG yang relevan sama sekali (RAG Miss/Fallback), atau pertanyaan dijawab murni dari general knowledge AI tanpa data perusahaan. | **Knowledge Gap Prioritas Tinggi**. |
+| **`HIGH`** | Dokumen RAG memuat jawaban lengkap, jelas, eksplisit, dan tanpa ambiguitas. | Jawaban terverifikasi penuh (*Fully Grounded*). |
+| **`MEDIUM`** | Dokumen RAG ada dan relevan, namun data masih **ambigu**, implisit, atau hanya menjawab sebagian pertanyaan. | Jawaban cukup baik, namun dokumen KB **perlu diperjelas/diperinci** agar tidak ambigu. |
+| **`LOW`** | Dokumen RAG ada sedikit kesamaan kata kunci tapi melenceng jauh, ATAU **pertanyaan user tidak masuk akal / di luar lingkup domain aplikasi** (misal chit-chat umum, pertanyaan hal acak). | Jika pertanyaan bisnis: **Knowledge Gap**. Jika pertanyaan acak/out-of-scope: ditandai sebagai non-domain. |
+| **`NONE`** | Tidak ada dokumen RAG yang relevan sama sekali (RAG Miss/Fallback), atau dijawab murni dari general knowledge AI. | RAG Fallback. Jika pertanyaan produk: **Knowledge Gap Prioritas Tinggi**. |
 
 ### 4.2 Knowledge Gap (`isKnowledgeGap`)
 - Tipe data: `boolean` (`true` atau `false`).
-- Nilai `true` diberikan jika pertanyaan relevan dengan produk/bisnis, tetapi dokumen yang disuplai ke AI **tidak memiliki data yang cukup** untuk menjawab secara tuntas.
+- **Aturan Krusial:**
+  - Nilai `true` diberikan **HANYA JIKA** pertanyaan relevan dengan produk/bisnis/aplikasi, tetapi dokumen di Knowledge Base belum memuat informasi tersebut.
+  - Nilai `false` diberikan jika data sudah ada (**HIGH/MEDIUM**), ATAU jika pertanyaan **sama sekali tidak masuk akal / di luar domain aplikasi** (misal nanya resep masakan di aplikasi e-commerce, atau pertanyaan trolling). Hal ini mencegah admin disarankan membuat dokumen untuk hal-hal yang bukan urusan bisnis aplikasi.
 
 ### 4.3 Kategori Topik (`topicCategory`)
-Nama kategori singkat yang dirangkum AI (contoh: `"SOP Pengiriman"`, `"Billing & Refund"`, `"Troubleshooting Teknis"`, `"Akun & Keamanan"`, `"Promosi & Diskon"`).
+Nama kategori singkat yang dirangkum AI (contoh: `"SOP Pengiriman"`, `"Billing & Refund"`, `"Garansi & Servis"`, `"Akun & Keamanan"`).  
+*Jika pertanyaan di luar domain:* Beri kategori `"Out of Scope / Chit-chat"`.
 
 ### 4.4 Judul Sesi (`sessionTitle`)
 Judul ringkas (3-6 kata) yang merangkum topik pembicaraan. Dihasilkan pada pesan pertama sesi atau diperbarui saat topik percakapan bergeser.
@@ -129,16 +132,18 @@ Di dalam workflow n8n, instruksikan model LLM (OpenAI / Claude) melalui System P
 Selain menjawab pertanyaan user secara ramah dan profesional, lakukan evaluasi kualitas grounding terhadap data Knowledge Base yang diberikan:
 
 1. Nilai "evidenceLevel" sebagai:
-   - "HIGH": Jika data Knowledge Base menjawab pertanyaan user secara tegas dan lengkap.
-   - "MEDIUM": Jika data Knowledge Base hanya menjawab sebagian.
-   - "LOW": Jika data Knowledge Base ada tapi kurang memadai/lemah untuk menjawab inti pertanyaan.
+   - "HIGH": Jika data Knowledge Base menjawab pertanyaan user secara tegas, eksplisit, dan lengkap.
+   - "MEDIUM": Jika data Knowledge Base ada namun informasinya masih AMBIGU, implisit, atau hanya menjawab sebagian.
+   - "LOW": Jika data Knowledge Base sangat lemah/tidak menjawab, ATAU jika pertanyaan user tidak masuk akal / di luar lingkup domain aplikasi.
    - "NONE": Jika tidak ada informasi relevan sama sekali di Knowledge Base.
 
-2. Berikan "evidenceReason": Jelaskan dalam 1 kalimat singkat alasan penilaian tersebut (dokumen mana yang dipakai atau bagian mana yang kurang).
+2. Berikan "evidenceReason": Jelaskan dalam 1 kalimat singkat alasan penilaian tersebut (contoh: "Data ada tapi ambigu mengenai ketentuan garansi air" atau "Pertanyaan di luar konteks aplikasi").
 
-3. Set "isKnowledgeGap": bernilai true jika pertanyaan ini seharusnya bisa dijawab oleh data perusahaan namun dokumen yang diberikan belum memuat informasi tersebut.
+3. Set "isKnowledgeGap":
+   - bernilai TRUE: HANYA jika pertanyaan relevan dengan bisnis/produk tetapi datanya belum ada/lemah di Knowledge Base.
+   - bernilai FALSE: Jika data sudah lengkap/cukup, ATAU jika pertanyaan user di luar lingkup/tidak masuk akal bagi aplikasi ini.
 
-4. Berikan "topicCategory": Kategori singkat topik pertanyaan (contoh: "Pengiriman", "Refund", "Produk").
+4. Berikan "topicCategory": Kategori singkat topik pertanyaan (contoh: "Garansi", "Pengiriman", "Refund", atau "Out of Scope" jika di luar topik aplikasi).
 
 5. Berikan "sessionTitle": Ringkasan judul sesi 3-5 kata berdasarkan inti kebutuhan user.
 ```

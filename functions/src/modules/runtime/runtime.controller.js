@@ -90,6 +90,10 @@ const handleChat = async (req, res, next) => {
         }, { merge: true });
       }
 
+      const activeTrace = response._internalTrace || response.__trace || null;
+      const retrievalSourcesCount = activeTrace?.ragChunksInjected ?? (response.retrievalSources ?? 0);
+      const executionRoute = response.type === 'function_call' ? 'FUNCTION' : (retrievalSourcesCount > 0 ? 'RAG' : 'DIRECT');
+
       // For external SDK requests, persist user and assistant messages
       if (req.tenant.apiKeyId !== 'simulator_mode') {
         const msgCol = sessionRef.collection('messages');
@@ -103,10 +107,15 @@ const handleChat = async (req, res, next) => {
           content: response.data?.content || (response.type === 'function_call' ? `Function call: ${response.data?.function}` : ''),
           timestamp: nowIso,
           metadata: {
-            route: response.type === 'function_call' ? 'FUNCTION' : (response.__trace?.ragChunksInjected > 0 ? 'RAG' : 'DIRECT'),
+            route: executionRoute,
             requestId: req.id,
             latencyMs,
+            sources: retrievalSourcesCount,
             evidenceLevel: response.evaluation?.evidenceLevel || null,
+            evidenceReason: response.evaluation?.evidenceReason || null,
+            isKnowledgeGap: Boolean(response.evaluation?.isKnowledgeGap),
+            topicCategory: response.evaluation?.topicCategory || null,
+            trace: activeTrace,
           }
         });
         await sessionRef.set({
@@ -118,6 +127,10 @@ const handleChat = async (req, res, next) => {
       logger.warn({ err: sessionErr }, 'Failed to persist session/messages to Firestore');
     }
 
+    const activeTrace = response._internalTrace || response.__trace || null;
+    const retrievalSourcesCount = activeTrace?.ragChunksInjected ?? (response.retrievalSources ?? 0);
+    const executionRoute = response.type === 'function_call' ? 'FUNCTION' : (retrievalSourcesCount > 0 ? 'RAG' : 'DIRECT');
+
     const analyticsService = require('../analytics/analytics.service');
     analyticsService.logRuntimeEvent(
       { uid: req.tenant.workspaceId, projectId: req.tenant.projectId },
@@ -126,16 +139,18 @@ const handleChat = async (req, res, next) => {
         sessionId,
         latencyMs,
         source: req.tenant.apiKeyId === 'simulator_mode' ? 'SIMULATOR' : 'SDK',
-        route: response.type === 'function_call' ? 'FUNCTION' : (response.__trace?.ragChunksInjected > 0 ? 'RAG' : 'DIRECT'),
+        route: executionRoute,
         status: 'SUCCESS',
         functionName: response.type === 'function_call' ? response.data?.function : null,
-        retrievalSources: response.__trace?.ragChunksInjected ?? 0,
+        retrievalSources: retrievalSourcesCount,
         evidenceLevel: response.evaluation?.evidenceLevel || 'HIGH',
         evidenceReason: response.evaluation?.evidenceReason || null,
-        isKnowledgeGap: response.evaluation?.isKnowledgeGap || false,
+        isKnowledgeGap: Boolean(response.evaluation?.isKnowledgeGap),
         topicCategory: response.evaluation?.topicCategory || 'General',
         appName: req.headers['x-infria-app-name'] || (req.tenant.apiKeyId === 'simulator_mode' ? null : 'SDK Client'),
-        querySnippet: message.substring(0, 150),
+        querySnippet: message.substring(0, 200),
+        responseSnippet: response.data?.content ? response.data.content.substring(0, 250) : (response.type === 'function_call' ? `Function: ${response.data?.function}` : null),
+        trace: activeTrace,
       }
     );
 
